@@ -1,0 +1,15 @@
+# Python environment caches
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# Configuration and environment secrets
+.env
+config/settings.py
+
+# Local databases and logs
+*.db
+*.log
