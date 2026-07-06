@@ -1,58 +1,50 @@
 import os
 import sys
 import json
-import queue
 import pyaudio
 from vosk import Model, KaldiRecognizer
 
 class HermesEars:
-    def __init__(self, model_path="model"):
+    def __init__(self):
+        model_path = "model"
         if not os.path.exists(model_path):
-            print(f"[Error]: Vosk model not found at '{model_path}'.")
+            print(f"\n[Sensory Error]: Language matrix folder '{model_path}' not found!")
             sys.exit(1)
             
-        # Initialize upgraded high-accuracy translation arrays
         self.model = Model(model_path)
         self.recognizer = KaldiRecognizer(self.model, 16000)
-        self.audio_queue = queue.Queue()
-        self.p = pyaudio.PyAudio()
-
-    def audio_callback(self, in_data, frame_count, time_info, status):
-        self.audio_queue.put(in_data)
-        return (None, pyaudio.paContinue)
-
-    def listen_for_wake_word(self, wake_word="wake up"):
-        print(f"\n[Sensory]: Upgraded Microphone Array online. Listening for '{wake_word}'...")
         
-        stream = self.p.open(
+        # Force Vosk to recognize partial/incomplete words immediately for responsiveness
+        self.recognizer.SetWords(True)
+        
+        self.p = pyaudio.PyAudio()
+        self.stream = self.p.open(
             format=pyaudio.paInt16,
             channels=1,
             rate=16000,
             input=True,
-            frames_per_buffer=4000,
-            stream_callback=self.audio_callback
+            frames_per_buffer=4000  # Optimized buffer matching chunk read size
         )
-        stream.start_stream()
+        self.stream.start_stream()
 
-        try:
-            while True:
-                data = self.audio_queue.get()
-                if self.recognizer.AcceptWaveform(data):
-                    result = json.loads(self.recognizer.Result())
-                    text = result.get("text", "").lower().strip()
-                    
-                    if text:
-                        print(f"[Heard]: {text}")
-                        if wake_word in text:
-                            print(f"\n🎯 [Sensory]: Wake-word detected! Greetings, Sir.")
-                            return True
-        except KeyboardInterrupt:
-            print("\n[Sensory]: Shutting down audio workers safely.")
-        finally:
-            stream.stop_stream()
-            stream.close()
-            self.p.terminate()
-
-if __name__ == "__main__":
-    ears = HermesEars()
-    ears.listen_for_wake_word()
+    def listen(self):
+        # Read matching chunk sizes to avoid hardware stream sync loss
+        data = self.stream.read(4000, exception_on_overflow=False)
+        if len(data) == 0:
+            return None
+            
+        if self.recognizer.AcceptWaveform(data):
+            result = json.loads(self.recognizer.Result())
+            text = result.get("text", "").strip()
+            if text:
+                return text
+        else:
+            # Fallback: Capture words even if there wasn't a long structural pause
+            partial = json.loads(self.recognizer.PartialResult())
+            partial_text = partial.get("partial", "").strip()
+            # If a long phrase is built up but hasn't finalized, return it to clear backlog
+            if len(partial_text.split()) > 3:
+                self.recognizer.Reset()
+                return partial_text
+                
+        return None
