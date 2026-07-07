@@ -1,11 +1,12 @@
 import os
 import sys
+import asyncio
 from modules.ears import HermesEars
 from modules.brain import HermesBrain
 from modules.automation import HermesHands
 from modules.voice import HermesVoice
 
-def main():
+async def main_loop():
     print("\n==============================================")
     try:
         ears = HermesEars()
@@ -13,32 +14,32 @@ def main():
         hands = HermesHands()
         voice = HermesVoice()
     except SystemExit:
-        print("[Initialization Failed]: Verify environment keys.")
+        print("[Initialization Failed]: Verify environment variables.")
         return
 
-    print("[System]: HERMES Fully Autonomous Voice Matrix Online.")
+    print("[System]: HERMES Enterprise Asynchronous Matrix Active.")
     print("==============================================\n")
     
-    voice.speak("All systems are fully operational, Sir. I am listening.")
+    # Run the initial voice greeting within the async framework thread pool
+    await asyncio.to_thread(voice.speak, "All systems are fully operational, Sir. Matrix synchronized.")
 
     while True:
         try:
-            # 👂 Step 1: Streams real-time audio through your mic array instead of typing
-            user_input = ears.listen()
+            # Yield loop execution control cleanly to background threads to catch voice chunks
+            user_input = await asyncio.to_thread(ears.listen)
             
             if not user_input:
+                await asyncio.sleep(0.01)
                 continue
 
             print(f"\nUser (Spoken): {user_input}")
 
             if "shutdown hermes" in user_input.lower() or "exit system" in user_input.lower():
-                voice.speak("Disconnecting terminal matrices. Goodbye, Sir.")
+                await asyncio.to_thread(voice.speak, "Disconnecting terminal matrices. Goodbye, Sir.")
                 break
 
-            # 🧠 Step 2: Cognition Processing Engine
-            raw_response = brain.think(user_input)
+            raw_response = await asyncio.to_thread(brain.think, user_input)
             
-            # ⚙️ Step 3: Structured System Macro Parser
             if "COMMAND:" in raw_response:
                 try:
                     lines = raw_response.split("\n")
@@ -48,18 +49,19 @@ def main():
                     action_type = parts[0].strip()
                     target_value = parts[1].replace("TARGET:", "").strip()
                     
-                    # 🚀 Step 4: Execute Operating System Instruction
-                    execution_result = hands.execute_system_command(action_type, target_value)
-                    voice.speak(execution_result)
+                    execution_result = await asyncio.to_thread(hands.execute_system_command, action_type, target_value)
+                    await asyncio.to_thread(voice.speak, execution_result)
                 except Exception as parse_error:
                     print(f"HERMES Parsing Error: {parse_error}")
             else:
-                # 🔊 Step 5: Vocal Response Feedback
-                voice.speak(raw_response)
+                await asyncio.to_thread(voice.speak, raw_response)
                 
-        except KeyboardInterrupt:
-            print("\nTerminating structural background loops, Sir.")
-            break
+        except Exception as loop_error:
+            print(f"[Loop Exception]: {loop_error}")
+            await asyncio.sleep(0.5)
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main_loop())
+    except KeyboardInterrupt:
+        print("\nTerminating structural background loops, Sir.")
