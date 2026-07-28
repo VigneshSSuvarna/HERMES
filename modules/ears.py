@@ -1,50 +1,62 @@
-import os
 import sys
-import json
-import pyaudio
-from vosk import Model, KaldiRecognizer
+import time
+import threading
+import queue
+
+try:
+    import speech_recognition as sr
+    HAS_SR = True
+except ImportError:
+    HAS_SR = False
+
 
 class HermesEars:
     def __init__(self):
-        model_path = "model"
-        if not os.path.exists(model_path):
-            print(f"\n[Sensory Error]: Language matrix folder '{model_path}' not found!")
+        if not HAS_SR:
+            print("[Ears Error]: SpeechRecognition is not installed. Run 'pip install SpeechRecognition pyaudio'")
             sys.exit(1)
-            
-        self.model = Model(model_path)
-        self.recognizer = KaldiRecognizer(self.model, 16000)
-        
-        # Force Vosk to recognize partial/incomplete words immediately for responsiveness
-        self.recognizer.SetWords(True)
-        
-        self.p = pyaudio.PyAudio()
-        self.stream = self.p.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=16000,
-            input=True,
-            frames_per_buffer=4000  # Optimized buffer matching chunk read size
-        )
-        self.stream.start_stream()
 
-    def listen(self):
-        # Read matching chunk sizes to avoid hardware stream sync loss
-        data = self.stream.read(4000, exception_on_overflow=False)
-        if len(data) == 0:
-            return None
-            
-        if self.recognizer.AcceptWaveform(data):
-            result = json.loads(self.recognizer.Result())
-            text = result.get("text", "").strip()
-            if text:
-                return text
-        else:
-            # Fallback: Capture words even if there wasn't a long structural pause
-            partial = json.loads(self.recognizer.PartialResult())
-            partial_text = partial.get("partial", "").strip()
-            # If a long phrase is built up but hasn't finalized, return it to clear backlog
-            if len(partial_text.split()) > 3:
-                self.recognizer.Reset()
-                return partial_text
-                
-        return None
+        self.recognizer = sr.Recognizer()
+        self.recognizer.dynamic_energy_threshold = True
+        self.recognizer.pause_threshold = 0.8
+        
+        self.speech_queue = queue.Queue()
+        self.is_listening = True
+
+        # Start microphone listener in a dedicated background thread
+        self.listener_thread = threading.Thread(target=self._background_listener, daemon=True)
+        self.listener_thread.start()
+        print("[Sensory]: Background Threaded Voice Receiver Active.")
+
+    def _background_listener(self):
+        """Continuously listens to microphone in background without freezing main loop."""
+        with sr.Microphone() as source:
+            # Calibrate for ambient noise once
+            try:
+                self.recognizer.adjust_for_ambient_noise(source, duration=1.0)
+            except Exception:
+                pass
+
+            while self.is_listening:
+                try:
+                    # Listen for phrase (timeout prevents blocking indefinitely)
+                    audio = self.recognizer.listen(source, timeout=3, phrase_time_limit=7)
+                    text = self.recognizer.recognize_google(audio)
+                    text = text.lower().strip()
+                    
+                    if text:
+                        print(f"\n[Voice Captured]: {text}")
+                        self.speech_queue.put(text)
+                except sr.WaitTimeoutError:
+                    continue
+                except sr.UnknownValueError:
+                    continue
+                except Exception as e:
+                    time.sleep(0.5)
+
+    def get_command(self) -> str:
+        """Non-blocking fetch of recognized voice commands."""
+        try:
+            return self.speech_queue.get_nowait()
+        except queue.Empty:
+            return ""
