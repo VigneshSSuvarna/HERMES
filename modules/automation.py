@@ -1,72 +1,248 @@
 import os
+import sys
+import glob
 import subprocess
 import webbrowser
 import pyautogui
+import psutil
 import time
+import pygetwindow as gw
+
+try:
+    import screen_brightness_control as sbc
+except ImportError:
+    sbc = None
+
+
+class WindowsUniversalLauncher:
+    """Dynamically finds and launches ANY application installed on Windows with robust alias mapping."""
+    def __init__(self):
+        # Universal Start Menu shortcut locations
+        user_profile = os.getenv("USERPROFILE", "C:\\Users\\Default")
+        self.shortcut_dirs = [
+            r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs",
+            os.path.join(user_profile, r"AppData\Roaming\Microsoft\Windows\Start Menu\Programs"),
+            r"C:\Users\Public\Desktop",
+            os.path.join(user_profile, "Desktop")
+        ]
+        
+        # Build app cache dictionary on startup
+        self.app_cache = {}
+        self.refresh_app_cache()
+
+    def refresh_app_cache(self):
+        """Scans all Windows Start Menu shortcuts and Desktop links."""
+        self.app_cache.clear()
+        for folder in self.shortcut_dirs:
+            if os.path.exists(folder):
+                for root, _, files in os.walk(folder):
+                    for file in files:
+                        if file.endswith((".lnk", ".url", ".exe")):
+                            clean_name = file.rsplit(".", 1)[0].lower()
+                            full_path = os.path.join(root, file)
+                            self.app_cache[clean_name] = full_path
+
+    def launch(self, app_name: str) -> bool:
+        """Attempts to locate and launch the specified application robustly."""
+        target = app_name.strip().lower()
+        if not target:
+            return False
+
+        # Common App Aliases for instant matching
+        aliases = {
+            "chrome": "google chrome",
+            "vscode": "visual studio code",
+            "code": "visual studio code",
+            "word": "winword",
+            "excel": "excel",
+            "powerpoint": "powerpnt",
+            "notepad": "notepad",
+            "calc": "calc",
+            "calculator": "calc",
+            "spotify": "spotify",
+            "discord": "discord"
+        }
+        
+        lookup_target = aliases.get(target, target)
+
+        # 1. Direct Windows command / Start execution
+        try:
+            os.system(f"start {lookup_target}")
+            return True
+        except Exception:
+            pass
+
+        # 2. Check cached Start Menu shortcuts
+        for name, path in self.app_cache.items():
+            if lookup_target == name or lookup_target in name or name in lookup_target:
+                try:
+                    os.startfile(path)
+                    return True
+                except Exception:
+                    pass
+
+        # 3. Aggressive wildcard scan in Program Files & AppData
+        search_roots = [
+            r"C:\Program Files",
+            r"C:\Program Files (x86)",
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs"),
+            os.path.expandvars(r"%APPDATA%")
+        ]
+
+        for s_root in search_roots:
+            if os.path.exists(s_root):
+                matches = glob.glob(os.path.join(s_root, "**", f"*{lookup_target}*.exe"), recursive=True)
+                if matches:
+                    try:
+                        os.startfile(matches[0])
+                        return True
+                    except Exception:
+                        pass
+
+        return False
+
 
 class HermesHands:
     def __init__(self):
-        # Move mouse to any corner of the screen to instantly abort script if it acts up
         pyautogui.FAILSAFE = True
+        pyautogui.PAUSE = 0.1
+        self.launcher = WindowsUniversalLauncher()
+        print("[Hands]: Universal Windows Automation Engine Initialized.")
 
-    def execute_system_command(self, action_type, target):
-        """Maps structured instructions directly into native Windows actions."""
-        action_type = action_type.lower().strip()
-        target_clean = target.strip()
-        
-        print(f"\n⚙️ [Execution Array]: Initiating macro '{action_type}' -> Target: {target_clean}")
-        
+    def execute_action(self, action_type: str, target: str = "") -> str:
+        """Master dispatcher for OS execution commands."""
+        action = action_type.strip().lower()
+        target_val = target.strip()
+
         try:
-            # 🚀 MACRO 1: Open Local Applications
-            if action_type == "open_app":
-                target_lower = target_clean.lower()
-                if "notepad" in target_lower:
-                    subprocess.Popen(["notepad.exe"])
-                elif "calculator" in target_lower or "calc" in target_lower:
-                    subprocess.Popen(["calc.exe"])
-                elif "chrome" in target_lower:
-                    # Tries standard installation paths for Google Chrome
-                    chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-                    if os.path.exists(chrome_path):
-                        subprocess.Popen([chrome_path])
-                    else:
-                        os.system("start chrome")
-                else:
-                    # Generic Windows shell launch fallback
-                    os.system(f"start {target_clean}")
-                return f"Successfully opened {target_clean}, Sir."
-
-            # 🌐 MACRO 2: Intelligent Web Navigation & Google Searching
-            elif action_type == "open_website":
-                target_lower = target_clean.lower()
-                # If it looks like a clean domain name, wrap it properly
-                if target_lower.endswith((".com", ".org", ".net", ".in", ".edu")):
-                    url = f"https://{target_clean}" if not target_clean.startswith("http") else target_clean
-                    webbrowser.open(url)
-                    return f"Navigating directly to {target_clean}, Sir."
-                else:
-                    # If it's a general request, convert it into an automated Google query search string
-                    url = f"https://www.google.com/search?q={target_clean.replace(' ', '+')}"
-                    webbrowser.open(url)
-                    return f"Searching the web for '{target_clean}', Sir."
-
-            # ⌨️ MACRO 3: Direct Core Text Injection (Typing Simulation)
-            elif action_type == "type_text":
-                # Brief sleep delay to allow a text box to gain target screen focus
-                time.sleep(1.0)
-                pyautogui.write(target_clean, interval=0.03)
-                return "Text matrix successfully injected, Sir."
-
-            # ❌ Unrecognized Action Fallback
-            else:
-                return f"[Execution Error]: Core instruction pattern '{action_type}' is unmapped."
+            # 1. ADVANCED APP OPERATION & CHAINING
+            if action == "focus_window":
+                windows = gw.getWindowsWithTitle(target_val)
+                if not windows:
+                    all_wins = gw.getAllWindows()
+                    windows = [w for w in all_wins if target_val.lower() in w.title.lower()]
                 
+                if windows:
+                    win = windows[0]
+                    if win.isMinimized:
+                        win.restore()
+                    win.activate()
+                    return f"Focused active window: {win.title}"
+                return f"Could not find an open window for '{target_val}'"
+
+            elif action == "press_key":
+                pyautogui.press(target_val)
+                return f"Pressed key: {target_val}"
+                
+            elif action == "wait":
+                try:
+                    delay = float(target_val)
+                    time.sleep(delay)
+                    return f"Waited for {delay} seconds."
+                except:
+                    time.sleep(1)
+                    return "Waited standard 1 second."
+
+            # 2. UNIVERSAL APPLICATION & WEBSITE CONTROLLER
+            elif action == "open_app":
+                success = self.launcher.launch(target_val)
+                if success:
+                    return f"Successfully launched application: {target_val}"
+                else:
+                    return f"Could not locate '{target_val}' in system shortcuts or Program Files."
+
+            elif action == "open_website":
+                url = target_val if target_val.startswith("http") else f"https://{target_val}"
+                webbrowser.open(url)
+                return f"Opened website: {url}"
+
+            # 3. AUDIO & MEDIA CONTROLLER
+            elif action == "volume_up":
+                for _ in range(5):
+                    pyautogui.press("volumeup")
+                return "Increased system volume."
+
+            elif action == "volume_down":
+                for _ in range(5):
+                    pyautogui.press("volumedown")
+                return "Decreased system volume."
+
+            elif action == "mute":
+                pyautogui.press("volumemute")
+                return "Toggled master audio mute."
+
+            elif action == "media_play_pause":
+                pyautogui.press("playpause")
+                return "Toggled media playback."
+
+            elif action == "media_next":
+                pyautogui.press("nexttrack")
+                return "Skipped to next track."
+
+            elif action == "media_prev":
+                pyautogui.press("prevtrack")
+                return "Returned to previous track."
+
+            # 4. WORKSTATION POWER COMMANDS
+            elif action == "lock_pc":
+                subprocess.run("rundll32.exe user32.dll,LockWorkStation", shell=True)
+                return "Workstation locked, Sir."
+
+            elif action == "shutdown_pc":
+                os.system("shutdown /s /t 10")
+                return "Initiating system shutdown sequence..."
+
+            elif action == "restart_pc":
+                os.system("shutdown /r /t 10")
+                return "Initiating system restart..."
+
+            # 5. WINDOW & PROCESS MANAGEMENT
+            elif action == "close_window":
+                pyautogui.hotkey("alt", "f4")
+                return "Closed active window."
+
+            elif action == "minimize_all":
+                pyautogui.hotkey("win", "d")
+                return "Toggled desktop view."
+
+            elif action == "kill_process":
+                killed_any = False
+                for proc in psutil.process_iter(['pid', 'name']):
+                    try:
+                        if target_val.lower() in proc.info['name'].lower():
+                            proc.kill()
+                            killed_any = True
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                
+                if killed_any:
+                    return f"Terminated process matching '{target_val}'."
+                return f"No active process matching '{target_val}' was found."
+
+            # 6. KEYBOARD & MOUSE MACROS
+            elif action == "type_text":
+                pyautogui.write(target_val, interval=0.02)
+                return "Typed requested text."
+
+            elif action == "hotkey":
+                keys = [k.strip() for k in target_val.split("+")]
+                pyautogui.hotkey(*keys)
+                return f"Executed hotkey: {target_val}"
+
+            # 7. FILE EXPLORER CONTROLLER
+            elif action == "open_explorer":
+                path = target_val if target_val else "C:\\"
+                os.startfile(path)
+                return f"Opened File Explorer at: {path}"
+
+            else:
+                return f"Unknown system action: {action_type}"
+
         except Exception as e:
-            return f"[Execution Failure]: Physical link dropped. Details: {e}"
+            return f"[Execution Error]: {e}"
+
 
 if __name__ == "__main__":
-    # Diagnostic multi-test verification script
     hands = HermesHands()
-    print("\n[Diagnostic Test Run]: Running advanced website search routing logic...")
-    res = hands.execute_system_command("open_website", "latest space x launch updates")
-    print(f"Result: {res}\n")
+    print("Testing Universal Launcher...")
+    print(hands.execute_action("open_app", "chrome"))

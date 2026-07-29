@@ -1,120 +1,141 @@
-import os
 import sys
+import os
 import time
-import subprocess
-import webbrowser
-import requests
+import threading
+from PyQt5.QtWidgets import QApplication
 
-from modules.ears import HermesEars
+# Include root folder in sys.path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from ui.dashboard import HermesDashboard
 from modules.brain import HermesBrain
-from modules.automation import HermesHands
+from modules.ears import HermesEars
 from modules.voice import HermesVoice
+from modules.automation import HermesHands
 from modules.eyes import HermesEyes
 
 
-def get_current_location():
-    try:
-        res = requests.get("https://ipinfo.io/json", timeout=5).json()
-        city = res.get("city", "Unknown City")
-        region = res.get("region", "Unknown Region")
-        country = res.get("country", "Unknown Country")
-        return f"You are currently located near {city}, {region}, {country}."
-    except Exception:
-        return "I was unable to determine your current location, Sir."
+def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: HermesHands, voice: HermesVoice, eyes: HermesEyes):
+    cmd_clean = cmd.strip()
+    if not cmd_clean:
+        return
 
+    # Visual State: PROCESSING
+    app.set_voice_state("PROCESSING", f"PROCESSING: '{cmd_clean.upper()}'")
+    app.log(f"[OPERATOR COMMAND]: {cmd_clean}")
 
-def process_command(command_text, brain, hands, voice, eyes):
-    command_lower = command_text.lower().strip()
-    print(f"\n[Executing Command]: '{command_lower}'")
+    # Exit Overrides
+    if any(k in cmd_clean.lower() for k in ["shutdown system", "exit hermes", "quit hermes"]):
+        voice.speak("Shutting down systems. Goodbye, Sir.")
+        if hasattr(app, 'vision_box'):
+            app.vision_box.stop_feed()
+        QApplication.quit()
+        sys.exit(0)
 
-    # 1. System Shutdown
-    if any(w in command_lower for w in ["shutdown", "exit", "stop hermes", "bye"]):
-        voice.speak("Disconnecting terminal matrices. Goodbye, Sir.")
-        print("[System]: Shutting down...")
-        os._exit(0)
-
-    # 2. Launch Applications
-    elif "notepad" in command_lower:
-        print("[Action]: Opening Notepad...")
-        voice.speak("Opening Notepad, Sir.")
-        try:
-            subprocess.Popen(["notepad.exe"])
-            print("[Success]: Notepad process started.")
-        except Exception as e:
-            print(f"[Error launching Notepad]: {e}")
-
-    elif "calculator" in command_lower or "calc" in command_lower:
-        print("[Action]: Opening Calculator...")
-        voice.speak("Opening Calculator, Sir.")
-        subprocess.Popen(["calc.exe"])
-
-    # 3. Launch Websites
-    elif "youtube" in command_lower:
-        print("[Action]: Opening YouTube...")
-        voice.speak("Opening YouTube, Sir.")
-        webbrowser.open("https://www.youtube.com")
-
-    elif "google" in command_lower:
-        print("[Action]: Opening Google...")
-        voice.speak("Opening Google, Sir.")
-        webbrowser.open("https://www.google.com")
-
-    # 4. Location Query
-    elif any(phrase in command_lower for phrase in ["location", "where am i"]):
-        loc_info = get_current_location()
-        print(f"[HERMES]: {loc_info}")
-        voice.speak(loc_info)
-
-    # 5. Screen Snapshot (Vision)
-    elif any(phrase in command_lower for phrase in ["screen", "monitor"]):
-        voice.speak("Capturing desktop snapshot, Sir.")
-        vision_summary = eyes.see_screen("Summarize what is open on my monitor in detail.")
-        print(f"\n[HERMES Vision Analysis]:\n{vision_summary}\n")
-        voice.speak(vision_summary)
-
-    # 6. Webcam Snapshot (Vision)
-    elif any(phrase in command_lower for phrase in ["webcam", "camera"]):
-        voice.speak("Accessing optical camera feed, Sir.")
-        vision_summary = eyes.see_webcam("Describe what you see in front of the camera in detail.")
-        print(f"\n[HERMES Camera Analysis]:\n{vision_summary}\n")
-        voice.speak(vision_summary)
-
-    # 7. Conversational AI Brain Reasoning
+    # Screen Vision Analysis
+    if any(k in cmd_clean.lower() for k in ["analyze screen", "look at my screen"]):
+        app.log("[Eyes]: Capturing screen for neural vision analysis...")
+        screen_file = eyes.capture_screen()
+        if screen_file:
+            response = brain.think("Please analyze what is currently visible on my screen.")
+            eyes.cleanup()
+        else:
+            response = "Sir, screen capture failed."
     else:
-        raw_response = brain.think(command_lower)
-        print(f"[HERMES]: {raw_response}")
-        voice.speak(raw_response)
+        # Get response from Brain
+        response = brain.think(cmd_clean)
+
+    # -------------------------------------------------------------
+    # COMMAND PARSER & EXECUTION
+    # -------------------------------------------------------------
+    clean_reply = response
+
+    if "COMMAND:" in response:
+        try:
+            # Extract line containing COMMAND:
+            for line in response.split("\n"):
+                if "COMMAND:" in line:
+                    # Syntax: COMMAND: action_type | TARGET: target_value
+                    parts = line.split("COMMAND:")[1].split("|")
+                    action_type = parts[0].strip()
+                    target_val = ""
+                    if len(parts) > 1 and "TARGET:" in parts[1]:
+                        target_val = parts[1].split("TARGET:")[1].strip()
+
+                    app.log(f"[Hands Dispatch]: Action='{action_type}', Target='{target_val}'")
+                    
+                    # Execute automation on system
+                    exec_result = hands.execute_action(action_type, target_val)
+                    app.log(f"[Hands Output]: {exec_result}")
+
+            # Strip COMMAND line out of spoken audio response
+            lines = [l for l in response.split("\n") if not l.startswith("COMMAND:")]
+            clean_reply = "\n".join(lines).strip()
+            if not clean_reply:
+                clean_reply = "Task executed, Sir."
+
+        except Exception as e:
+            app.log(f"[Main Error]: Command parsing failed: {e}")
+
+    # Visual State & Speech Output: SPEAKING
+    app.log(f"[HERMES]: {clean_reply}")
+    app.set_voice_state("SPEAKING", "TRANSMITTING NEURAL SPEECH...")
+    voice.speak(clean_reply)
+
+    # Reset State to Listening
+    app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+
+
+def background_voice_loop(app, ears, brain, hands, voice, eyes):
+    """Listens continuously for direct voice commands with noise filtering."""
+    while True:
+        try:
+            app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+            
+            # Direct voice command capture
+            voice_cmd = ears.get_command()
+            
+            # Require at least 2 words or 3+ characters to avoid static noise triggers
+            if voice_cmd and len(voice_cmd.strip().split()) >= 1:
+                app.log(f"[Voice Captured]: {voice_cmd}")
+                process_command(voice_cmd, app, brain, hands, voice, eyes)
+
+            time.sleep(1.0)
+        except Exception as e:
+            app.log(f"[Voice Loop Error]: {e}")
+            time.sleep(2.0)
 
 
 def main():
-    print("==============================================")
-    print("   HERMES HYBRID VOICE & TEXT CONTROL CENTER  ")
-    print("==============================================\n")
+    app = QApplication(sys.argv)
 
-    print("[System]: Initializing core modules...")
-    ears = HermesEars()
+    # Core Module Initializations
     brain = HermesBrain()
-    hands = HermesHands()
+    ears = HermesEars()
     voice = HermesVoice()
+    hands = HermesHands()
     eyes = HermesEyes()
 
-    voice.speak("Voice perception matrices online, Sir.")
-    print("\n[System]: Listening for voice commands in background...")
+    # Create HUD Dashboard with Command Handler
+    def handle_gui_command(cmd_text):
+        threading.Thread(
+            target=process_command,
+            args=(cmd_text, gui, brain, hands, voice, eyes),
+            daemon=True
+        ).start()
 
-    while True:
-        try:
-            # 1. Check for incoming spoken commands from background thread
-            voice_cmd = ears.get_command()
-            if voice_cmd:
-                process_command(voice_cmd, brain, hands, voice, eyes)
+    gui = HermesDashboard(command_callback=handle_gui_command)
 
-            time.sleep(0.1) # Prevents CPU usage spike
+    # Launch Voice Listener Thread
+    voice_thread = threading.Thread(
+        target=background_voice_loop,
+        args=(gui, ears, brain, hands, voice, eyes),
+        daemon=True
+    )
+    voice_thread.start()
 
-        except KeyboardInterrupt:
-            print("\nShutting down HERMES, Sir.")
-            break
-        except Exception as e:
-            print(f"[Loop Error]: {e}")
+    gui.log("[HERMES]: Systems online. Direct OS automation bridge active.")
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":

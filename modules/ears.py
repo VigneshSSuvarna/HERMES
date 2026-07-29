@@ -1,62 +1,59 @@
-import sys
-import time
-import threading
-import queue
-
-try:
-    import speech_recognition as sr
-    HAS_SR = True
-except ImportError:
-    HAS_SR = False
+import speech_recognition as sr
 
 
 class HermesEars:
     def __init__(self):
-        if not HAS_SR:
-            print("[Ears Error]: SpeechRecognition is not installed. Run 'pip install SpeechRecognition pyaudio'")
-            sys.exit(1)
-
         self.recognizer = sr.Recognizer()
+        
+        # Increase energy threshold (e.g., from 300 to 800) so it ignores quiet room noise
+        self.recognizer.energy_threshold = 800 
         self.recognizer.dynamic_energy_threshold = True
         self.recognizer.pause_threshold = 0.8
+
+        print("[Ears]: Direct Continuous Listening Active (Noise Filtered).")
+    def __init__(self):
+        """
+        Initializes continuous direct voice capture without any wake word requirement.
+        """
+        self.recognizer = sr.Recognizer()
         
-        self.speech_queue = queue.Queue()
-        self.is_listening = True
+        # Micro-calibrated sensitivity for continuous ambient speech
+        self.recognizer.energy_threshold = 300
+        self.recognizer.dynamic_energy_threshold = True
+        self.recognizer.pause_threshold = 0.8
 
-        # Start microphone listener in a dedicated background thread
-        self.listener_thread = threading.Thread(target=self._background_listener, daemon=True)
-        self.listener_thread.start()
-        print("[Sensory]: Background Threaded Voice Receiver Active.")
+        print("[Ears]: Direct Continuous Listening Active (Wake Word Disabled).")
 
-    def _background_listener(self):
-        """Continuously listens to microphone in background without freezing main loop."""
-        with sr.Microphone() as source:
-            # Calibrate for ambient noise once
-            try:
-                self.recognizer.adjust_for_ambient_noise(source, duration=1.0)
-            except Exception:
-                pass
-
-            while self.is_listening:
-                try:
-                    # Listen for phrase (timeout prevents blocking indefinitely)
-                    audio = self.recognizer.listen(source, timeout=3, phrase_time_limit=7)
-                    text = self.recognizer.recognize_google(audio)
-                    text = text.lower().strip()
-                    
-                    if text:
-                        print(f"\n[Voice Captured]: {text}")
-                        self.speech_queue.put(text)
-                except sr.WaitTimeoutError:
-                    continue
-                except sr.UnknownValueError:
-                    continue
-                except Exception as e:
-                    time.sleep(0.5)
+    def listen_for_wakeword() -> bool:
+        """Compatibility hook - returns True immediately as wake word is bypassed."""
+        return True
 
     def get_command(self) -> str:
-        """Non-blocking fetch of recognized voice commands."""
-        try:
-            return self.speech_queue.get_nowait()
-        except queue.Empty:
-            return ""
+        """
+        Captures spoken audio directly from the microphone.
+        """
+        with sr.Microphone() as source:
+            self.recognizer.adjust_for_ambient_noise(source, duration=0.3)
+            try:
+                # Listens directly for speech
+                audio = self.recognizer.listen(source, timeout=4, phrase_time_limit=10)
+                command = self.recognizer.recognize_google(audio)
+                return command.strip()
+            except sr.WaitTimeoutError:
+                return ""
+            except sr.UnknownValueError:
+                return ""
+            except Exception as e:
+                print(f"[Ears Error]: Speech capture issue: {e}")
+                return ""
+
+
+if __name__ == "__main__":
+    # Standalone Test
+    ears = HermesEars()
+    print("Speak directly into your mic (no wake word needed)...")
+    cmd = ears.get_command()
+    if cmd:
+        print(f"[Captured Command]: '{cmd}'")
+    else:
+        print("No command captured.")
