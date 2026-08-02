@@ -1,8 +1,10 @@
+print(">>> BRAIN FILE LOADED CORRECTLY <<<")
 import os
 import sys
 import time
 import datetime
 from google import genai
+from PIL import Image
 from modules.memory import HermesMemory
 
 
@@ -34,14 +36,36 @@ class HermesBrain:
             "- hotkey (target: e.g. ctrl+t, ctrl+l, alt+tab)\n"
             "- press_key (target: enter, tab, esc, space)\n"
             "- wait (target: seconds, e.g. 1.5. ALWAYS wait after opening an app before typing!)\n"
+            "- fetch_weather (target: city name)\n"
+            "- fetch_info (target: search topic)\n"
             "- close_window, minimize_all, volume_up, volume_down, mute, media_play_pause"
+        )
+        self.system_prompt = (
+            "You are HERMES, an advanced AI desktop operating system assistant. You address the user as 'Sir'.\n"
+            "CRITICAL PROTOCOL: You have direct control over the Windows OS. You can CHAIN multiple actions together to perform complex tasks.\n"
+            "Output multiple COMMAND lines in sequence.\n\n"
+            "Supported action_types:\n"
+            "- open_app (target: app name)\n"
+            "- open_website (target: URL)\n"
+            "- focus_window (target: window title)\n"
+            "- maximize_window (target: window title, or leave blank for current)\n"
+            "- minimize_window (target: window title, or leave blank for current)\n"
+            "- restore_window (target: window title, or leave blank for current)\n"
+            "- close_active_window (target: window title, or leave blank for current)\n"
+            "- kill_process (target: app name)\n"
+            "- type_text (target: text to type)\n"
+            "- hotkey (target: e.g. ctrl+t, ctrl+l, alt+tab)\n"
+            "- press_key (target: enter, tab, esc, space)\n"
+            "- wait (target: seconds, e.g. 1.5)\n"
+            "- fetch_weather (target: city name)\n"
+            "- fetch_info (target: search topic)\n"
+            "- minimize_all, volume_up, volume_down, mute, media_play_pause"
         )
 
     def _fallback_think(self, text: str) -> str:
         """Autonomous Macro Planner: Converts complex natural language into multi-step OS operations."""
         cmd = text.lower().strip()
 
-        # 1. YouTube Search Macro Chain
         if "youtube" in cmd and ("search" in cmd or "find" in cmd or "play" in cmd):
             query = cmd.replace("youtube", "").replace("search", "").replace("find", "").replace("play", "").replace("for", "").strip()
             return (
@@ -56,7 +80,6 @@ class HermesBrain:
                 f"Executing macro search on YouTube for: '{query}', Sir."
             )
 
-        # 2. Notepad Writing Macro Chain
         elif "notepad" in cmd and ("write" in cmd or "type" in cmd or "note" in cmd):
             content = cmd.replace("notepad", "").replace("write", "").replace("type", "").replace("note", "").replace("down", "").strip()
             return (
@@ -66,7 +89,6 @@ class HermesBrain:
                 "Noting down your text in Notepad, Sir."
             )
 
-        # 3. General App Opener
         elif any(cmd.startswith(prefix) for prefix in ["open ", "launch ", "start ", "run "]):
             for prefix in ["open ", "launch ", "start ", "run "]:
                 if cmd.startswith(prefix):
@@ -77,7 +99,6 @@ class HermesBrain:
                 return f"COMMAND: open_website | TARGET: {target}\n\nOpening website: {target}, Sir."
             return f"COMMAND: open_app | TARGET: {target}\n\nLaunching {target}, Sir."
 
-        # 4. Media & Volume Controls
         elif any(k in cmd for k in ["volume up", "increase volume", "louder"]):
             return "COMMAND: volume_up | TARGET: \n\nIncreasing volume, Sir."
         elif any(k in cmd for k in ["volume down", "decrease volume", "quieter"]):
@@ -87,15 +108,27 @@ class HermesBrain:
         elif any(k in cmd for k in ["pause", "play", "stop music"]):
             return "COMMAND: media_play_pause | TARGET: \n\nToggling media playback, Sir."
 
-        # 5. Workstation Commands
         elif "lock" in cmd and ("pc" in cmd or "computer" in cmd or "screen" in cmd):
             return "COMMAND: lock_pc | TARGET: \n\nLocking workstation, Sir."
-        elif any(k in cmd for k in ["close window", "close app"]):
-            return "COMMAND: close_window | TARGET: \n\nClosing active window, Sir."
+       # 5. Workstation & Closing Commands
+        elif any(cmd.startswith(prefix) for prefix in ["close ", "kill ", "terminate ", "shut "]):
+            for prefix in ["close ", "kill ", "terminate ", "shut "]:
+                if cmd.startswith(prefix):
+                    target = cmd.replace(prefix, "").replace("down", "").strip()
+                    break
+            
+            # If the user just says "close window" or "close this"
+            if target in ["window", "this", "current window", "app", "application"]:
+                return "COMMAND: close_active_window | TARGET: \n\nClosing the active window, Sir."
+            
+            # If the user names a specific app (e.g., "close whatsapp")
+            return f"COMMAND: kill_process | TARGET: {target}\n\nTerminating {target}, Sir."
+
+        elif "lock" in cmd and ("pc" in cmd or "computer" in cmd or "screen" in cmd):
+            return "COMMAND: lock_pc | TARGET: \n\nLocking workstation, Sir."
         elif any(k in cmd for k in ["minimize", "show desktop"]):
             return "COMMAND: minimize_all | TARGET: \n\nShowing desktop view, Sir."
 
-        # 6. Greetings & System Info
         elif any(k in cmd for k in ["hi", "hello", "hey", "good morning"]):
             return "Good day, Sir! All systems are operational and ready to execute your commands."
         elif "time" in cmd:
@@ -104,6 +137,21 @@ class HermesBrain:
         elif "date" in cmd:
             date_str = datetime.datetime.now().strftime("%A, %B %d, %Y")
             return f"Today is {date_str}, Sir."
+        # Advanced Window Manipulation (Maximize, Minimize, Restore, Focus)
+        elif any(k in cmd for k in ["maximize", "minimize", "restore", "focus", "switch to"]):
+            action = ""
+            if "maximize" in cmd: action = "maximize_window"
+            elif "minimize" in cmd: action = "minimize_window"
+            elif "restore" in cmd: action = "restore_window"
+            elif "focus" in cmd or "switch to" in cmd: action = "focus_window"
+            
+            # Extract target (what app they want to control)
+            target = cmd.replace("maximize", "").replace("minimize", "").replace("restore", "").replace("focus", "").replace("switch to", "").replace("window", "").replace("the", "").replace("this", "").strip()
+            
+            if target:
+                return f"COMMAND: {action} | TARGET: {target}\n\nAdjusting {target} window layout, Sir."
+            else:
+                return f"COMMAND: {action} | TARGET: \n\nAdjusting your current window, Sir."
 
         return f"Acknowledged, Sir. Processing command: '{text}'"
 
@@ -142,3 +190,32 @@ class HermesBrain:
             pass
 
         return reply
+    
+    def think_with_vision(self, user_text: str, image_path: str) -> str:
+        """Sends both text prompt and an image file to Gemini for multimodal analysis."""
+        if not self.client:
+            return "Sir, cloud API client is required for vision processing."
+
+        try:
+            # The PIL import is now securely at the top of this file
+            image_file = Image.open(image_path)
+            
+            prompt = (
+                f"You are HERMES, an advanced AI desktop operating system assistant addressing the user as 'Sir'.\n"
+                f"Analyze the provided visual context from the user's screen/camera and answer: {user_text}"
+            )
+
+            for model_name in self.models_to_try:
+                try:
+                    response = self.client.models.generate_content(
+                        model=model_name,
+                        contents=[prompt, image_file],
+                    )
+                    if response and response.text:
+                        return response.text.strip()
+                except Exception:
+                    continue
+
+            return "Sir, visual analysis failed across all neural endpoints."
+        except Exception as e:
+            return f"[Vision Error]: {e}"

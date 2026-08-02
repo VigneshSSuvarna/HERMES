@@ -15,9 +15,8 @@ except ImportError:
 
 
 class WindowsUniversalLauncher:
-    """Dynamically finds and launches ANY application installed on Windows with robust alias mapping."""
+    """Dynamically finds and launches ANY application installed on Windows with human-mimic fallback."""
     def __init__(self):
-        # Universal Start Menu shortcut locations
         user_profile = os.getenv("USERPROFILE", "C:\\Users\\Default")
         self.shortcut_dirs = [
             r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs",
@@ -25,13 +24,10 @@ class WindowsUniversalLauncher:
             r"C:\Users\Public\Desktop",
             os.path.join(user_profile, "Desktop")
         ]
-        
-        # Build app cache dictionary on startup
         self.app_cache = {}
         self.refresh_app_cache()
 
     def refresh_app_cache(self):
-        """Scans all Windows Start Menu shortcuts and Desktop links."""
         self.app_cache.clear()
         for folder in self.shortcut_dirs:
             if os.path.exists(folder):
@@ -39,65 +35,54 @@ class WindowsUniversalLauncher:
                     for file in files:
                         if file.endswith((".lnk", ".url", ".exe")):
                             clean_name = file.rsplit(".", 1)[0].lower()
-                            full_path = os.path.join(root, file)
-                            self.app_cache[clean_name] = full_path
+                            self.app_cache[clean_name] = os.path.join(root, file)
 
     def launch(self, app_name: str) -> bool:
-        """Attempts to locate and launch the specified application robustly."""
         target = app_name.strip().lower()
         if not target:
             return False
 
-        # Common App Aliases for instant matching
+        # UWP Apps use registered URI protocols (adding a colon)
         aliases = {
-            "chrome": "google chrome",
-            "vscode": "visual studio code",
-            "code": "visual studio code",
+            "chrome": "chrome",
+            "vscode": "code",
             "word": "winword",
             "excel": "excel",
-            "powerpoint": "powerpnt",
             "notepad": "notepad",
-            "calc": "calc",
-            "calculator": "calc",
-            "spotify": "spotify",
-            "discord": "discord"
+            "whatsapp": "whatsapp:",
+            "spotify": "spotify:"
         }
         
         lookup_target = aliases.get(target, target)
 
-        # 1. Direct Windows command / Start execution
+        # 1. Direct Execution (Fastest)
         try:
-            os.system(f"start {lookup_target}")
+            # os.startfile will cleanly throw an error if it fails, unlike os.system
+            os.startfile(lookup_target)
             return True
         except Exception:
             pass
 
         # 2. Check cached Start Menu shortcuts
         for name, path in self.app_cache.items():
-            if lookup_target == name or lookup_target in name or name in lookup_target:
+            if target == name or target in name:
                 try:
                     os.startfile(path)
                     return True
                 except Exception:
                     pass
 
-        # 3. Aggressive wildcard scan in Program Files & AppData
-        search_roots = [
-            r"C:\Program Files",
-            r"C:\Program Files (x86)",
-            os.path.expandvars(r"%LOCALAPPDATA%\Programs"),
-            os.path.expandvars(r"%APPDATA%")
-        ]
-
-        for s_root in search_roots:
-            if os.path.exists(s_root):
-                matches = glob.glob(os.path.join(s_root, "**", f"*{lookup_target}*.exe"), recursive=True)
-                if matches:
-                    try:
-                        os.startfile(matches[0])
-                        return True
-                    except Exception:
-                        pass
+        # 3. GHOST TYPING PROTOCOL (Bulletproof for Windows Store Apps)
+        # If the file path fails, HERMES will manually type it into the Start Menu
+        try:
+            pyautogui.press('win')
+            time.sleep(0.8)  # Wait for Start Menu to open
+            pyautogui.write(target, interval=0.05)
+            time.sleep(0.8)  # Wait for Windows Search to find the app
+            pyautogui.press('enter')
+            return True
+        except Exception:
+            pass
 
         return False
 
@@ -115,7 +100,6 @@ class HermesHands:
         target_val = target.strip()
 
         try:
-            # 1. ADVANCED APP OPERATION & CHAINING
             if action == "focus_window":
                 windows = gw.getWindowsWithTitle(target_val)
                 if not windows:
@@ -143,28 +127,24 @@ class HermesHands:
                     time.sleep(1)
                     return "Waited standard 1 second."
 
-            # 2. UNIVERSAL APPLICATION & WEBSITE CONTROLLER
             elif action == "open_app":
                 success = self.launcher.launch(target_val)
                 if success:
                     return f"Successfully launched application: {target_val}"
                 else:
-                    return f"Could not locate '{target_val}' in system shortcuts or Program Files."
+                    return f"Could not locate '{target_val}' on this system."
 
             elif action == "open_website":
                 url = target_val if target_val.startswith("http") else f"https://{target_val}"
                 webbrowser.open(url)
                 return f"Opened website: {url}"
 
-            # 3. AUDIO & MEDIA CONTROLLER
             elif action == "volume_up":
-                for _ in range(5):
-                    pyautogui.press("volumeup")
+                for _ in range(5): pyautogui.press("volumeup")
                 return "Increased system volume."
 
             elif action == "volume_down":
-                for _ in range(5):
-                    pyautogui.press("volumedown")
+                for _ in range(5): pyautogui.press("volumedown")
                 return "Decreased system volume."
 
             elif action == "mute":
@@ -175,51 +155,42 @@ class HermesHands:
                 pyautogui.press("playpause")
                 return "Toggled media playback."
 
-            elif action == "media_next":
-                pyautogui.press("nexttrack")
-                return "Skipped to next track."
-
-            elif action == "media_prev":
-                pyautogui.press("prevtrack")
-                return "Returned to previous track."
-
-            # 4. WORKSTATION POWER COMMANDS
             elif action == "lock_pc":
                 subprocess.run("rundll32.exe user32.dll,LockWorkStation", shell=True)
                 return "Workstation locked, Sir."
 
-            elif action == "shutdown_pc":
-                os.system("shutdown /s /t 10")
-                return "Initiating system shutdown sequence..."
-
-            elif action == "restart_pc":
-                os.system("shutdown /r /t 10")
-                return "Initiating system restart..."
-
-            # 5. WINDOW & PROCESS MANAGEMENT
-            elif action == "close_window":
+            # --- THE CLOSING PROTOCOLS ---
+            elif action == "close_active_window":
                 pyautogui.hotkey("alt", "f4")
                 return "Closed active window."
+
+            elif action == "kill_process":
+                killed_any = False
+                target_proc = target_val.lower().strip()
+                
+                # Special alias handling for UWP apps
+                if target_proc == "whatsapp": target_proc = "whatsapp.exe"
+                elif target_proc == "spotify": target_proc = "spotify.exe"
+                elif target_proc in ["chrome", "google", "browser"]: target_proc = "chrome.exe"
+                elif target_proc in ["code", "vscode"]: target_proc = "code.exe"
+
+                # Scan RAM for the active application and terminate it
+                for proc in psutil.process_iter(['pid', 'name']):
+                    try:
+                        if target_proc in proc.info['name'].lower():
+                            proc.kill()
+                            killed_any = True
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                
+                if killed_any:
+                    return f"Successfully terminated {target_val}."
+                return f"Could not find any active process named '{target_val}'."
 
             elif action == "minimize_all":
                 pyautogui.hotkey("win", "d")
                 return "Toggled desktop view."
 
-            elif action == "kill_process":
-                killed_any = False
-                for proc in psutil.process_iter(['pid', 'name']):
-                    try:
-                        if target_val.lower() in proc.info['name'].lower():
-                            proc.kill()
-                            killed_any = True
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-                
-                if killed_any:
-                    return f"Terminated process matching '{target_val}'."
-                return f"No active process matching '{target_val}' was found."
-
-            # 6. KEYBOARD & MOUSE MACROS
             elif action == "type_text":
                 pyautogui.write(target_val, interval=0.02)
                 return "Typed requested text."
@@ -228,21 +199,75 @@ class HermesHands:
                 keys = [k.strip() for k in target_val.split("+")]
                 pyautogui.hotkey(*keys)
                 return f"Executed hotkey: {target_val}"
+            # --- ADVANCED WINDOW MANAGEMENT ---
+            elif action in ["maximize_window", "minimize_window", "restore_window", "close_active_window"]:
+                # If no target specified, act on the currently active window
+                if not target_val or target_val in ["this", "current", "it", "window"]:
+                    win = gw.getActiveWindow()
+                else:
+                    # Search for a specific window by name
+                    windows = gw.getWindowsWithTitle(target_val)
+                    if not windows:
+                        all_wins = gw.getAllWindows()
+                        windows = [w for w in all_wins if target_val.lower() in w.title.lower()]
+                    win = windows[0] if windows else None
 
-            # 7. FILE EXPLORER CONTROLLER
-            elif action == "open_explorer":
-                path = target_val if target_val else "C:\\"
-                os.startfile(path)
-                return f"Opened File Explorer at: {path}"
+                if win:
+                    if action == "maximize_window":
+                        win.maximize()
+                        return f"Maximized window: {win.title}"
+                    elif action == "minimize_window":
+                        win.minimize()
+                        return f"Minimized window: {win.title}"
+                    elif action == "restore_window":
+                        win.restore()
+                        return f"Restored window: {win.title}"
+                    elif action == "close_active_window":
+                        win.close()
+                        return f"Closed window: {win.title}"
+                else:
+                    return f"Could not find an open window matching '{target_val}'"
+
+            elif action == "focus_window":
+                windows = gw.getWindowsWithTitle(target_val)
+                if not windows:
+                    all_wins = gw.getAllWindows()
+                    windows = [w for w in all_wins if target_val.lower() in w.title.lower()]
+                
+                if windows:
+                    win = windows[0]
+                    if win.isMinimized:
+                        win.restore()
+                    win.activate()
+                    return f"Focused active window: {win.title}"
+                return f"Could not find an open window for '{target_val}'"
+
+            elif action == "kill_process":
+                # Scans RAM for the active application and forcefully terminates it
+                killed_any = False
+                target_proc = target_val.lower().strip()
+                
+                # Special alias handling for UWP/Tricky apps
+                if target_proc == "whatsapp": target_proc = "whatsapp.exe"
+                elif target_proc == "spotify": target_proc = "spotify.exe"
+                elif target_proc in ["chrome", "google", "browser"]: target_proc = "chrome.exe"
+                elif target_proc in ["code", "vscode"]: target_proc = "code.exe"
+
+                for proc in psutil.process_iter(['pid', 'name']):
+                    try:
+                        if target_proc in proc.info['name'].lower():
+                            proc.kill()
+                            killed_any = True
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                
+                if killed_any:
+                    return f"Successfully terminated {target_val}."
+                return f"Could not find any active process named '{target_val}'."
 
             else:
                 return f"Unknown system action: {action_type}"
 
         except Exception as e:
             return f"[Execution Error]: {e}"
-
-
-if __name__ == "__main__":
-    hands = HermesHands()
-    print("Testing Universal Launcher...")
-    print(hands.execute_action("open_app", "chrome"))
+        
