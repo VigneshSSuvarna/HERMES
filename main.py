@@ -1,8 +1,9 @@
 import sys
 import os
 import time
+import glob
 import threading
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QStyle
 
 # Include root folder in sys.path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -17,15 +18,103 @@ from modules.internet import HermesInternet
 
 
 def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: HermesHands, voice: HermesVoice, eyes: HermesEyes, internet: HermesInternet):
-    cmd_clean = cmd.strip()
+    # Strip whitespace and wrapping quotes to prevent artifact bugs
+    cmd_clean = cmd.strip('"\' ')
     if not cmd_clean:
         return
+
+    # 🚀 WAKE-WORD & FILLER STRIPPER: Strip leading conversational prefixes
+    cmd_lower_raw = cmd_clean.lower()
+    for filler in ["hermes,", "hermes", "jarvis,", "jarvis", "please"]:
+        if cmd_lower_raw.startswith(filler):
+            cmd_clean = cmd_clean[len(filler):].strip()
+            break
+
+    cmd_clean = cmd_clean.strip('"\' ,')
+    if not cmd_clean:
+        return
+
+    response = ""
 
     # Visual State: PROCESSING
     app.set_voice_state("PROCESSING", f"PROCESSING: '{cmd_clean.upper()}'")
     app.log(f"[OPERATOR COMMAND]: {cmd_clean}")
+    
+    # -------------------------------------------------------------
+    # ⚡ FAST-TRACK LOCAL OVERRIDES (Zero-Latency OS Controls)
+    # -------------------------------------------------------------
+    cmd_lower = cmd_clean.lower()
+    
+    # 1. Fast-Track: Opening Apps (Bypassed if it's a compound search command)
+    if cmd_lower.startswith("open ") or cmd_lower.startswith("launch "):
+        target = cmd_lower.replace("open ", "").replace("launch ", "").strip()
+        
+        # If it's a compound search command, let Gemini handle the macro chain!
+        if "and search" in target or "search for" in target or " and " in target:
+            pass  # Falls through to the Cloud Brain
+        else:
+            app.log(f"[Fast-Track]: Launching {target}")
+            exec_result = hands.execute_action("open_app", target)
+            print(f"[TRACE]: Fast-Track Hands -> {exec_result}")
+            voice.speak(f"Opening {target}, Sir.")
+            app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+            return
+    
+    # Fast-Track: Dynamic Volume Control (Extracts ANY number dynamically)
+    if "volume" in cmd_lower:
+        import re
+        numbers = re.findall(r'\d+', cmd_lower)
+        if numbers:
+            target_vol = numbers[0]  # Captures whatever number you said (e.g., 20, 50, 85)
+            app.log(f"[Fast-Track]: Setting volume to {target_vol}%")
+            exec_result = hands.execute_action("set_volume", target_vol)
+            print(f"[TRACE]: Fast-Track Hands -> {exec_result}")
+            voice.speak(f"Volume set to {target_vol} percent, Sir.")
+        elif any(k in cmd_lower for k in ["up", "increase", "louder"]):
+            hands.execute_action("volume_up", "")
+            voice.speak("Increasing volume, Sir.")
+        elif any(k in cmd_lower for k in ["down", "decrease", "quieter"]):
+            hands.execute_action("volume_down", "")
+            voice.speak("Decreasing volume, Sir.")
+        elif "mute" in cmd_lower:
+            hands.execute_action("mute", "")
+            voice.speak("Toggling audio mute, Sir.")
+            
+        app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+        return
+    
+    # 2. Fast-Track: Closing Apps & Windows
+    if cmd_lower.startswith("close ") or cmd_lower.startswith("kill "):
+        target = cmd_lower.replace("close ", "").replace("kill ", "").replace(" the ", "").strip()
+        
+        if target in ["window", "this", "app", "application", "it"]:
+            app.log(f"[Fast-Track]: Closing active window")
+            exec_result = hands.execute_action("close_active_window", "")
+        else:
+            app.log(f"[Fast-Track]: Terminating {target}")
+            exec_result = hands.execute_action("kill_process", target)
+            
+        print(f"[TRACE]: Fast-Track Hands -> {exec_result}")
+        voice.speak("Task executed, Sir.")
+        app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+        return
 
-    # Exit Overrides
+    # 3. Fast-Track: Window Resizing
+    if cmd_lower.startswith("maximize"):
+        hands.execute_action("maximize_window", "")
+        voice.speak("Maximized, Sir.")
+        app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+        return
+        
+    if cmd_lower.startswith("minimize"):
+        hands.execute_action("minimize_window", "")
+        voice.speak("Minimized, Sir.")
+        app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+        return
+
+    # -------------------------------------------------------------
+    # SYSTEM & UI OVERRIDES
+    # -------------------------------------------------------------
     if any(k in cmd_clean.lower() for k in ["shutdown system", "exit hermes", "quit hermes"]):
         voice.speak("Shutting down systems. Goodbye, Sir.")
         if hasattr(app, 'vision_box'):
@@ -33,30 +122,90 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
         QApplication.quit()
         sys.exit(0)
 
-    # Screen Vision Analysis
-    if any(k in cmd_clean.lower() for k in ["analyze screen", "look at my screen"]):
+    if any(k in cmd_clean.lower() for k in ["hide hud", "hide interface", "minimize to tray"]):
+        app.hide()
+        voice.speak("Minimizing interface to system tray, Sir. I am still listening.")
+        app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+        return
+
+    if any(k in cmd_clean.lower() for k in ["show hud", "open interface", "bring up dashboard"]):
+        app.showFullScreen()
+        voice.speak("Restoring visual interface, Sir.")
+        app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+        return
+
+    # -------------------------------------------------------------
+    # VISION & LOCAL IMAGE READING OVERRIDES
+    # -------------------------------------------------------------
+    cmd_lower_vision = cmd_clean.lower().replace('"', '').replace("'", "")
+    vision_triggers = ["look at my screen", "analyze screen", "what is on my screen", "what do you see", "see my screen"]
+    
+    if any(k in cmd_lower_vision for k in vision_triggers):
         app.log("[Eyes]: Capturing screen for neural vision analysis...")
+        print("\n--- TRACE: VISION SCREEN CAPTURE TRIGGERED ---")
         screen_file = eyes.capture_screen()
-        if screen_file:
-            response = brain.think_with_vision("Please analyze what is currently visible on my screen.", screen_file)
+        
+        if screen_file and os.path.exists(screen_file):
+            print(f"[TRACE]: Screenshot captured to '{screen_file}'. Handing to Brain...")
+            response = brain.think_with_vision("Analyze what is currently visible on my screen and summarize it for me.", screen_file)
             eyes.cleanup()
         else:
             response = "Sir, screen capture failed."
-    else:
-        # Get response from Brain
+        
+        app.log(f"[HERMES]: {response}")
+        app.set_voice_state("SPEAKING", "TRANSMITTING NEURAL SPEECH...")
+        voice.speak(response)
+        app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+        return
+
+    # Local Image File Reader (e.g. "read test image")
+    if cmd_lower_vision.startswith("read ") or cmd_lower_vision.startswith("analyze image ") or cmd_lower_vision.startswith("look at image "):
+        target_name = cmd_lower_vision.replace("read ", "").replace("analyze image ", "").replace("look at image ", "").strip()
+        app.log(f"[Eyes]: Searching local storage for image matching '{target_name}'...")
+        
+        possible_files = glob.glob(f"*{target_name.replace(' ', '_')}*") + glob.glob(f"*{target_name}*")
+        image_file = None
+        for f in possible_files:
+            if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
+                image_file = f
+                break
+                
+        if not image_file and "test" in target_name:
+            for default_name in ["test.png", "test.jpg", "test_image.png", "test_image.jpg"]:
+                if os.path.exists(default_name):
+                    image_file = default_name
+                    break
+                    
+        if image_file and os.path.exists(image_file):
+            app.log(f"[TRACE]: Found image file '{image_file}'. Handing to Gemini Vision...")
+            response = brain.think_with_vision(f"Read and extract all text or describe what is visible in this image file: {target_name}", image_file)
+        else:
+            response = f"Sir, I could not find an image file matching '{target_name}' in the working directory."
+            
+        app.log(f"[HERMES]: {response}")
+        app.set_voice_state("SPEAKING", "TRANSMITTING NEURAL SPEECH...")
+        voice.speak(response)
+        app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+        return
+
+    # -------------------------------------------------------------
+    # GENERAL AI BRAIN INGESTION (If no override matched)
+    # -------------------------------------------------------------
+    if not response:
         response = brain.think(cmd_clean)
 
     # -------------------------------------------------------------
-    # COMMAND PARSER & EXECUTION
+    # COMMAND PARSER & EXECUTION (WITH TRACE LOGGING)
     # -------------------------------------------------------------
     clean_reply = response
+    
+    print(f"\n--- TRACE: RAW BRAIN OUTPUT ---\n{response}\n-------------------------------")
 
     if "COMMAND:" in response:
         try:
-            # Extract line containing COMMAND:
             for line in response.split("\n"):
                 if "COMMAND:" in line:
-                    # Syntax: COMMAND: action_type | TARGET: target_value
+                    print(f"[TRACE]: Parsing line -> {line.strip()}")
                     parts = line.split("COMMAND:")[1].split("|")
                     action_type = parts[0].strip()
                     target_val = ""
@@ -64,8 +213,8 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
                         target_val = parts[1].split("TARGET:")[1].strip()
 
                     app.log(f"[Dispatch]: Action='{action_type}', Target='{target_val}'")
+                    print(f"[TRACE]: Successfully Dispatched -> Action: '{action_type}', Target: '{target_val}'")
                     
-                    # Execute appropriate subsystem action
                     if action_type == "fetch_weather":
                         exec_result = internet.fetch_weather(target_val)
                         app.log(f"[Internet]: {exec_result}")
@@ -75,52 +224,70 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
                         app.log(f"[Internet]: {exec_result}")
                         clean_reply = exec_result
                     else:
+                        print(f"[TRACE]: Handing off to automation.py...")
                         exec_result = hands.execute_action(action_type, target_val)
+                        print(f"[TRACE]: Hands returned -> {exec_result}")
                         app.log(f"[Hands Output]: {exec_result}")
 
-            # Strip COMMAND lines out of spoken audio response if not handled above
-            if not any(k in action_type for k in ["fetch_weather", "fetch_info"]):
+            if not any(k in response for k in ["fetch_weather", "fetch_info"]):
                 lines = [l for l in response.split("\n") if not l.startswith("COMMAND:")]
                 clean_reply = "\n".join(lines).strip()
                 if not clean_reply:
                     clean_reply = "Task executed, Sir."
 
         except Exception as e:
+            print(f"[TRACE ERROR]: Command parsing failed: {e}")
             app.log(f"[Main Error]: Command parsing failed: {e}")
 
-    # Visual State & Speech Output: SPEAKING
     app.log(f"[HERMES]: {clean_reply}")
     app.set_voice_state("SPEAKING", "TRANSMITTING NEURAL SPEECH...")
     voice.speak(clean_reply)
-
-    # Reset State to Listening
     app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
 
 
 def background_voice_loop(app, ears, brain, hands, voice, eyes, internet):
-    """Listens continuously for direct voice commands with noise filtering."""
+    """Listens continuously for direct voice commands with an extended post-speech cooldown to prevent self-echo."""
+    last_speech_time = 0
     while True:
         try:
-            app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+            # If Hermes is currently speaking, track the time and skip listening
+            if getattr(voice, 'is_speaking', False):
+                time.sleep(0.2)
+                last_speech_time = time.time()
+                continue
             
-            # Direct voice command capture
+            # Cooldown: Ignore microphone input for 3.5 seconds after Hermes finishes speaking
+            if time.time() - last_speech_time < 3.5:
+                time.sleep(0.1)
+                continue
+
+            app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
             voice_cmd = ears.get_command()
             
-            # Require at least 1 word/token to trigger command parsing
             if voice_cmd and len(voice_cmd.strip().split()) >= 1:
+                clean_cmd = voice_cmd.strip().lower()
+                
+                # Filter out system speech echoes and feedback automatically
+                echo_phrases = ["acknowledged", "processing command", "sir", "neural speech", "acknowledged sir", "hermes", "at your service"]
+                if any(phrase in clean_cmd for phrase in echo_phrases) and len(clean_cmd.split()) <= 4:
+                    time.sleep(0.1)
+                    continue
+
                 app.log(f"[Voice Captured]: {voice_cmd}")
                 process_command(voice_cmd, app, brain, hands, voice, eyes, internet)
-
-            time.sleep(1.0)
+            
+            time.sleep(0.1)
         except Exception as e:
             app.log(f"[Voice Loop Error]: {e}")
-            time.sleep(2.0)
+            time.sleep(0.5)
 
 
 def main():
     app = QApplication(sys.argv)
+    
+    # CRITICAL: Keep HERMES alive in the background even if the visual HUD is closed
+    app.setQuitOnLastWindowClosed(False)
 
-    # Core Module Initializations
     brain = HermesBrain()
     ears = HermesEars()
     voice = HermesVoice()
@@ -128,7 +295,6 @@ def main():
     eyes = HermesEyes()
     internet = HermesInternet()
 
-    # Create HUD Dashboard with Command Handler
     def handle_gui_command(cmd_text):
         threading.Thread(
             target=process_command,
@@ -138,7 +304,29 @@ def main():
 
     gui = HermesDashboard(command_callback=handle_gui_command)
 
-    # Launch Voice Listener Thread
+    # -------------------------------------------------------------
+    # SYSTEM TRAY DAEMON (Taskbar Icon)
+    # -------------------------------------------------------------
+    tray_icon = QSystemTrayIcon(app.style().standardIcon(QStyle.SP_ComputerIcon), app)
+    tray_icon.setToolTip("HERMES AI Operating System")
+    
+    tray_menu = QMenu()
+    show_action = QAction("Show Dashboard", app)
+    show_action.triggered.connect(gui.showFullScreen)
+    hide_action = QAction("Hide Dashboard", app)
+    hide_action.triggered.connect(gui.hide)
+    quit_action = QAction("Shutdown HERMES", app)
+    quit_action.triggered.connect(lambda: sys.exit(0))
+    
+    tray_menu.addAction(show_action)
+    tray_menu.addAction(hide_action)
+    tray_menu.addSeparator()
+    tray_menu.addAction(quit_action)
+    
+    tray_icon.setContextMenu(tray_menu)
+    tray_icon.show()
+
+    # Launch Voice Listener
     voice_thread = threading.Thread(
         target=background_voice_loop,
         args=(gui, ears, brain, hands, voice, eyes, internet),
@@ -146,7 +334,7 @@ def main():
     )
     voice_thread.start()
 
-    gui.log("[HERMES]: Systems online. Universal OS & Web intelligence bridge active.")
+    gui.log("[HERMES]: Systems online. Background Daemon Active.")
     sys.exit(app.exec_())
 
 

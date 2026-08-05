@@ -15,7 +15,7 @@ except ImportError:
 
 
 class WindowsUniversalLauncher:
-    """Dynamically finds and launches ANY application installed on Windows with human-mimic fallback."""
+    """Diagnostic-grade application launcher with verbose error tracking."""
     def __init__(self):
         user_profile = os.getenv("USERPROFILE", "C:\\Users\\Default")
         self.shortcut_dirs = [
@@ -26,7 +26,7 @@ class WindowsUniversalLauncher:
         ]
         self.app_cache = {}
         self.refresh_app_cache()
-
+        
     def refresh_app_cache(self):
         self.app_cache.clear()
         for folder in self.shortcut_dirs:
@@ -36,13 +36,56 @@ class WindowsUniversalLauncher:
                         if file.endswith((".lnk", ".url", ".exe")):
                             clean_name = file.rsplit(".", 1)[0].lower()
                             self.app_cache[clean_name] = os.path.join(root, file)
+        print(f"[Launcher]: Cached {len(self.app_cache)} application shortcuts from system directories.")
+        
+    def click_text_on_screen(self, description: str) -> str:
+        """
+        Visually finds an element on the screen based on a natural language description 
+        and clicks it using AI vision coordinates.
+        """
+        print(f"[Hands Vision]: Scanning screen for '{description}'...")
+        
+        screenshot_path = "temp_screen_scan.png"
+        pyautogui.screenshot(screenshot_path)
+        
+        try:
+            from modules.brain import HermesBrain
+            brain = HermesBrain()
+            
+            prompt = (
+                f"Look at this screenshot of my computer screen. "
+                f"Find the exact center pixel coordinates (X, Y) of the button, icon, or text that matches: '{description}'. "
+                f"Reply ONLY with the numbers in this exact format: X, Y. If you cannot find it, reply: NOT_FOUND"
+            )
+            
+            response = brain.think_with_vision(prompt, screenshot_path)
+            
+            if os.path.exists(screenshot_path):
+                os.remove(screenshot_path)
+                
+            if "NOT_FOUND" in response or "," not in response:
+                return f"Could not visually locate '{description}' on the screen."
+                
+            coords_str = response.strip().split()[0]
+            x_str, y_str = coords_str.replace("(", "").replace(")", "").split(",")
+            x, y = int(x_str.strip()), int(y_str.strip())
+            
+            pyautogui.moveTo(x, y, duration=0.5)
+            pyautogui.click()
+            
+            return f"Successfully clicked on '{description}' at coordinates ({x}, {y})."
+            
+        except Exception as e:
+            if os.path.exists(screenshot_path):
+                os.remove(screenshot_path)
+            return f"Visual click failed: {e}"
 
     def launch(self, app_name: str) -> bool:
         target = app_name.strip().lower()
         if not target:
             return False
 
-        # UWP Apps use registered URI protocols (adding a colon)
+        # Protocol aliases for standard desktop apps & UWP store apps
         aliases = {
             "chrome": "chrome",
             "vscode": "code",
@@ -50,40 +93,82 @@ class WindowsUniversalLauncher:
             "excel": "excel",
             "notepad": "notepad",
             "whatsapp": "whatsapp:",
-            "spotify": "spotify:"
+            "spotify": "spotify:",
+            "calculator": "calculator:",
+            "calc": "calculator:",
+            "soundrecorder": "Sound Recorder:",
+            "voice recorder": "Sound Recorder:",
+            "netflix": "netflix:",
+            "settings": "ms-settings:"
         }
         
         lookup_target = aliases.get(target, target)
+        print(f"[Launcher]: Executing nuclear bypass for '{lookup_target}'...")
 
-        # 1. Direct Execution (Fastest)
+        # LAYER 1: Native Shell / URI Protocol Injection with Auto-Focus
         try:
-            # os.startfile will cleanly throw an error if it fails, unlike os.system
+            print(f"[Layer 1] Injecting '{lookup_target}' into Windows Core...")
+            if ":" in lookup_target:
+                subprocess.Popen(f'explorer.exe {lookup_target}', shell=True)
+            else:
+                subprocess.Popen(f'start {lookup_target}', shell=True)
+                
+            # Wait 1.5 seconds for the app window to render
+            time.sleep(1.5)
+
+            # --- AUTOMATIC WINDOW FOCUS FIX ---
+            try:
+                search_term = target.replace(":", "").replace("app", "").strip()
+                windows = gw.getAllWindows()
+                for win in windows:
+                    if search_term in win.title.lower():
+                        if win.isMinimized:
+                            win.restore()
+                        win.activate()
+                        print(f"[Launcher]: Successfully focused window -> '{win.title}'")
+                        break
+            except Exception as focus_err:
+                print(f"[Launcher Focus Warning]: {focus_err}")
+
+            print("[Layer 1] Execution sent successfully.")
+            return True
+        except Exception as e:
+            print(f"[Layer 1] Core Injection Failed: {e}")
+
+        # LAYER 2: PowerShell Stealth Execution
+        try:
+            print(f"[Layer 2] Injecting '{lookup_target}' into PowerShell...")
+            subprocess.Popen(["powershell", "-WindowStyle", "Hidden", "-Command", f"Start-Process '{lookup_target}'"])
+            time.sleep(1.5)
+            
+            # Auto-focus fallback for PowerShell layer
+            try:
+                search_term = target.replace(":", "").replace("app", "").strip()
+                windows = gw.getAllWindows()
+                for win in windows:
+                    if search_term in win.title.lower():
+                        if win.isMinimized:
+                            win.restore()
+                        win.activate()
+                        break
+            except:
+                pass
+
+            print("[Layer 2] Execution sent successfully.")
+            return True
+        except Exception as e:
+            print(f"[Layer 2] PowerShell Failed: {e}")
+
+        # LAYER 3: Standard OS Startfile
+        try:
+            print(f"[Layer 3] Attempting standard Python startfile...")
             os.startfile(lookup_target)
+            print("[Layer 3] Execution sent successfully.")
             return True
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[Layer 3] Startfile Failed: {e}")
 
-        # 2. Check cached Start Menu shortcuts
-        for name, path in self.app_cache.items():
-            if target == name or target in name:
-                try:
-                    os.startfile(path)
-                    return True
-                except Exception:
-                    pass
-
-        # 3. GHOST TYPING PROTOCOL (Bulletproof for Windows Store Apps)
-        # If the file path fails, HERMES will manually type it into the Start Menu
-        try:
-            pyautogui.press('win')
-            time.sleep(0.8)  # Wait for Start Menu to open
-            pyautogui.write(target, interval=0.05)
-            time.sleep(0.8)  # Wait for Windows Search to find the app
-            pyautogui.press('enter')
-            return True
-        except Exception:
-            pass
-
+        print(f"[Launcher Error]: All bypasses failed for '{target}'.")
         return False
 
 
@@ -92,120 +177,27 @@ class HermesHands:
         pyautogui.FAILSAFE = True
         pyautogui.PAUSE = 0.1
         self.launcher = WindowsUniversalLauncher()
-        print("[Hands]: Universal Windows Automation Engine Initialized.")
+        print("[Hands]: Universal Windows Automation Engine Initialized with Verbose Tracing.")
 
     def execute_action(self, action_type: str, target: str = "") -> str:
-        """Master dispatcher for OS execution commands."""
         action = action_type.strip().lower()
         target_val = target.strip()
+        print(f"[Hands Dispatch]: Action='{action}', Target='{target_val}'")
 
         try:
-            if action == "focus_window":
-                windows = gw.getWindowsWithTitle(target_val)
-                if not windows:
-                    all_wins = gw.getAllWindows()
-                    windows = [w for w in all_wins if target_val.lower() in w.title.lower()]
-                
-                if windows:
-                    win = windows[0]
-                    if win.isMinimized:
-                        win.restore()
-                    win.activate()
-                    return f"Focused active window: {win.title}"
-                return f"Could not find an open window for '{target_val}'"
-
-            elif action == "press_key":
-                pyautogui.press(target_val)
-                return f"Pressed key: {target_val}"
-                
-            elif action == "wait":
-                try:
-                    delay = float(target_val)
-                    time.sleep(delay)
-                    return f"Waited for {delay} seconds."
-                except:
-                    time.sleep(1)
-                    return "Waited standard 1 second."
-
-            elif action == "open_app":
+            # --- APP LAUNCHING ---
+            if action == "open_app":
                 success = self.launcher.launch(target_val)
                 if success:
                     return f"Successfully launched application: {target_val}"
                 else:
-                    return f"Could not locate '{target_val}' on this system."
+                    return f"Could not locate or launch '{target_val}' on this system."
 
-            elif action == "open_website":
-                url = target_val if target_val.startswith("http") else f"https://{target_val}"
-                webbrowser.open(url)
-                return f"Opened website: {url}"
-
-            elif action == "volume_up":
-                for _ in range(5): pyautogui.press("volumeup")
-                return "Increased system volume."
-
-            elif action == "volume_down":
-                for _ in range(5): pyautogui.press("volumedown")
-                return "Decreased system volume."
-
-            elif action == "mute":
-                pyautogui.press("volumemute")
-                return "Toggled master audio mute."
-
-            elif action == "media_play_pause":
-                pyautogui.press("playpause")
-                return "Toggled media playback."
-
-            elif action == "lock_pc":
-                subprocess.run("rundll32.exe user32.dll,LockWorkStation", shell=True)
-                return "Workstation locked, Sir."
-
-            # --- THE CLOSING PROTOCOLS ---
-            elif action == "close_active_window":
-                pyautogui.hotkey("alt", "f4")
-                return "Closed active window."
-
-            elif action == "kill_process":
-                killed_any = False
-                target_proc = target_val.lower().strip()
-                
-                # Special alias handling for UWP apps
-                if target_proc == "whatsapp": target_proc = "whatsapp.exe"
-                elif target_proc == "spotify": target_proc = "spotify.exe"
-                elif target_proc in ["chrome", "google", "browser"]: target_proc = "chrome.exe"
-                elif target_proc in ["code", "vscode"]: target_proc = "code.exe"
-
-                # Scan RAM for the active application and terminate it
-                for proc in psutil.process_iter(['pid', 'name']):
-                    try:
-                        if target_proc in proc.info['name'].lower():
-                            proc.kill()
-                            killed_any = True
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        continue
-                
-                if killed_any:
-                    return f"Successfully terminated {target_val}."
-                return f"Could not find any active process named '{target_val}'."
-
-            elif action == "minimize_all":
-                pyautogui.hotkey("win", "d")
-                return "Toggled desktop view."
-
-            elif action == "type_text":
-                pyautogui.write(target_val, interval=0.02)
-                return "Typed requested text."
-
-            elif action == "hotkey":
-                keys = [k.strip() for k in target_val.split("+")]
-                pyautogui.hotkey(*keys)
-                return f"Executed hotkey: {target_val}"
             # --- ADVANCED WINDOW MANAGEMENT ---
             elif action in ["maximize_window", "minimize_window", "restore_window", "close_active_window"]:
-                # If no target specified, act on the currently active window
                 if not target_val or target_val in ["this", "current", "it", "window"]:
                     win = gw.getActiveWindow()
                 else:
-                    # Search for a specific window by name
                     windows = gw.getWindowsWithTitle(target_val)
                     if not windows:
                         all_wins = gw.getAllWindows()
@@ -242,32 +234,155 @@ class HermesHands:
                     return f"Focused active window: {win.title}"
                 return f"Could not find an open window for '{target_val}'"
 
+            # --- PROCESS KILLER (NUCLEAR TASKKILL) ---
             elif action == "kill_process":
-                # Scans RAM for the active application and forcefully terminates it
-                killed_any = False
                 target_proc = target_val.lower().strip()
                 
-                # Special alias handling for UWP/Tricky apps
-                if target_proc == "whatsapp": target_proc = "whatsapp.exe"
-                elif target_proc == "spotify": target_proc = "spotify.exe"
-                elif target_proc in ["chrome", "google", "browser"]: target_proc = "chrome.exe"
-                elif target_proc in ["code", "vscode"]: target_proc = "code.exe"
-
-                for proc in psutil.process_iter(['pid', 'name']):
-                    try:
-                        if target_proc in proc.info['name'].lower():
-                            proc.kill()
-                            killed_any = True
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        continue
+                aliases = {
+                    "whatsapp": "whatsapp.exe",
+                    "spotify": "spotify.exe",
+                    "chrome": "chrome.exe",
+                    "google": "chrome.exe",
+                    "browser": "chrome.exe",
+                    "code": "code.exe",
+                    "vscode": "code.exe",
+                    "calculator": "calculatorapp.exe",
+                    "calc": "calculatorapp.exe",
+                    "notepad": "notepad.exe"
+                }
                 
-                if killed_any:
-                    return f"Successfully terminated {target_val}."
-                return f"Could not find any active process named '{target_val}'."
+                exe_name = aliases.get(target_proc, f"{target_proc}.exe")
+                print(f"[Hands]: Attempting nuclear TaskKill on {exe_name}...")
+                
+                try:
+                    result = subprocess.run(f"taskkill /F /IM {exe_name} /T", shell=True, capture_output=True, text=True)
+                    
+                    if result.returncode == 0:
+                        return f"Successfully terminated {target_val}."
+                    else:
+                        killed_any = False
+                        for proc in psutil.process_iter(['pid', 'name']):
+                            try:
+                                if exe_name.replace(".exe", "") in proc.info['name'].lower():
+                                    proc.kill()
+                                    killed_any = True
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                continue
+                                
+                        if killed_any:
+                            return f"Successfully terminated {target_val} via memory sweep."
+                        return f"Could not find any active process matching '{exe_name}'."
+                        
+                except Exception as e:
+                    return f"[Kill Error]: {e}"
+
+            # --- SYSTEM TERMINAL (GOD MODE) ---
+            elif action == "run_terminal":
+                print(f"[Hands]: Executing system command -> {target_val}")
+                try:
+                    result = subprocess.run(["powershell", "-Command", target_val], capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        out = result.stdout.strip()
+                        return f"Terminal execution successful. Output: {out[:100]}..." if out else "Terminal execution successful."
+                    else:
+                        return f"Terminal execution failed: {result.stderr.strip()}"
+                except Exception as e:
+                    return f"Terminal error: {e}"
+
+            elif action == "scroll":
+                try:
+                    clicks = int(target_val)
+                    pyautogui.scroll(clicks)
+                    return f"Scrolled screen by {clicks} units."
+                except:
+                    pyautogui.scroll(-500)
+                    return "Scrolled down."
+            elif action == "press_key":
+                pyautogui.press(target_val)
+                return f"Pressed key: {target_val}"
+                
+            elif action == "wait":
+                try:
+                    delay = float(target_val)
+                    time.sleep(delay)
+                    return f"Waited for {delay} seconds."
+                except:
+                    time.sleep(1)
+                    return "Waited standard 1 second."
+
+            elif action == "open_website":
+                url = target_val if target_val.startswith("http") else f"https://{target_val}"
+                webbrowser.open(url)
+                return f"Opened website: {url}"
+
+            elif action == "volume_up":
+                for _ in range(5): pyautogui.press("volumeup")
+                return "Increased system volume."
+
+            elif action == "volume_down":
+                for _ in range(5): pyautogui.press("volumedown")
+                return "Decreased system volume."
+
+            elif action == "mute":
+                pyautogui.press("volumemute")
+                return "Toggled master audio mute."
+
+            elif action == "media_play_pause":
+                pyautogui.press("playpause")
+                return "Toggled media playback."
+
+            elif action == "lock_pc":
+                subprocess.run("rundll32.exe user32.dll,LockWorkStation", shell=True)
+                return "Workstation locked, Sir."
+
+            elif action == "close_window":
+                pyautogui.hotkey("alt", "f4")
+                return "Closed active window."
+
+            elif action == "minimize_all":
+                pyautogui.hotkey("win", "d")
+                return "Toggled desktop view."
+
+            elif action == "type_text":
+                pyautogui.write(target_val, interval=0.02)
+                return "Typed requested text."
+
+            elif action == "hotkey":
+                keys = [k.strip() for k in target_val.split("+")]
+                pyautogui.hotkey(*keys)
+                return f"Executed hotkey: {target_val}"
+                
+            elif action == "set_volume":
+                try:
+                    vol_level = int(target_val.replace("%", "").strip())
+                    vol_level = max(0, min(100, vol_level)) # Clamp between 0 and 100
+                    scalar = vol_level / 100.0
+                    
+                    # Dual-layer volume method (Tries EndpointVolume first, falls back to COM cast)
+                    try:
+                        from pycaw.pycaw import AudioUtilities
+                        devices = AudioUtilities.GetSpeakers()
+                        volume = devices.EndpointVolume
+                        volume.SetMasterVolumeLevelScalar(scalar, None)
+                    except Exception:
+                        from ctypes import cast, POINTER
+                        from comtypes import CLSCTX_ALL
+                        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+                        devices = AudioUtilities.GetSpeakers()
+                        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+                        volume = cast(interface, POINTER(IAudioEndpointVolume))
+                        volume.SetMasterVolumeLevelScalar(scalar, None)
+                        
+                    return f"System volume set to {vol_level}%, Sir."
+                except ImportError:
+                    return "Sir, please run 'pip install pycaw comtypes' in your terminal."
+                except Exception as e:
+                    return f"Failed to set volume: {e}"
 
             else:
                 return f"Unknown system action: {action_type}"
-
+            
         except Exception as e:
-            return f"[Execution Error]: {e}"
-        
+            err_msg = f"[Execution Error]: {e}"
+            print(err_msg)
+            return err_msg

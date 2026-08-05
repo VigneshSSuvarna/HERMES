@@ -1,4 +1,5 @@
 import os
+import time
 import asyncio
 import edge_tts
 import pygame
@@ -13,6 +14,9 @@ class HermesVoice:
         """
         self.voice_model = voice_model
         self.temp_audio_file = "hermes_response.mp3"
+        
+        # CRITICAL: Tracks speech state to prevent microphone feedback loops
+        self.is_speaking = False
 
         # Initialize Pygame Audio Mixer
         try:
@@ -30,13 +34,22 @@ class HermesVoice:
         # Strip markdown symbols so speech remains natural
         clean_text = text.replace("*", "").replace("#", "").replace("`", "").strip()
 
-        try:
-            # Generate MP3 file asynchronously
-            asyncio.run(self._create_audio_file(clean_text))
+        self.is_speaking = True
 
-            # Play audio via Pygame Mixer
-            if os.path.exists(self.temp_audio_file):
-                pygame.mixer.music.load(self.temp_audio_file)
+        try:
+            # 1. Handle file locking gracefully by generating a unique timestamped filename if needed
+            unique_suffix = int(time.time() * 1000)
+            target_file = f"hermes_response_{unique_suffix}.mp3"
+
+            # 2. Generate MP3 file asynchronously via Edge TTS
+            asyncio.run(self._create_audio_file(clean_text, target_file))
+
+            # 3. Brief buffer to ensure the hard drive finished writing
+            time.sleep(0.05)
+
+            # 4. Play audio via Pygame Mixer
+            if os.path.exists(target_file):
+                pygame.mixer.music.load(target_file)
                 pygame.mixer.music.play()
 
                 # Block until audio finishes playing
@@ -44,18 +57,25 @@ class HermesVoice:
                     pygame.time.Clock().tick(10)
 
                 pygame.mixer.music.unload()
+                time.sleep(0.05) # Allow mixer to fully release file handle
 
-                # Clean up temporary audio file
-                if os.path.exists(self.temp_audio_file):
-                    os.remove(self.temp_audio_file)
+                # Clean up temporary audio file safely
+                try:
+                    if os.path.exists(target_file):
+                        os.remove(target_file)
+                except Exception:
+                    pass # Ignore if locked, will be cleaned up later
 
         except Exception as e:
             print(f"[Voice Error]: Neural TTS playback failed: {e}")
+        finally:
+            # Ensure lock releases even if an exception occurs
+            self.is_speaking = False
 
-    async def _create_audio_file(self, text: str):
-        """Streams audio directly from Edge Neural TTS."""
+    async def _create_audio_file(self, text: str, output_path: str):
+        """Streams audio directly from Edge Neural TTS to a unique target path."""
         communicate = edge_tts.Communicate(text, self.voice_model)
-        await communicate.save(self.temp_audio_file)
+        await communicate.save(output_path)
 
 
 if __name__ == "__main__":
