@@ -1,0 +1,84 @@
+import chromadb
+from chromadb.utils import embedding_functions
+import os
+import datetime
+
+class HermesLongTermMemory:
+    def __init__(self, db_path="data/chroma_db"):
+        print("[Memory Subsystem]: Initializing ChromaDB Long-Term Storage...")
+        
+        # Create a persistent local database on your hard drive
+        os.makedirs(db_path, exist_ok=True)
+        self.client = chromadb.PersistentClient(path=db_path)
+        
+        # 🔑 SECURE: Fetch API key safely from environment variables
+        self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        
+        if not self.api_key:
+            print("[Memory Warning]: API Key missing in long_term_memory.py. RAG disabled.")
+            self.collection = None
+            return
+
+        try:
+            # 🚀 Use Google's lightweight embedding API instead of heavy local PyTorch models
+            self.embedding_fn = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
+                api_key=self.api_key,
+                task_type="RETRIEVAL_DOCUMENT"
+            )
+            
+            # Create or load the memory "collection"
+            self.collection = self.client.get_or_create_collection(
+                name="hermes_memories",
+                embedding_function=self.embedding_fn
+            )
+            print("[Memory Subsystem]: Long-Term Storage Online and Ready (Google Embeddings).")
+        except Exception as e:
+            print(f"[Memory Error]: Failed to initialize Google Embeddings - {e}")
+            self.collection = None
+
+    def remember(self, text: str, source: str = "conversation"):
+        """
+        Saves a piece of information permanently into the vector database.
+        """
+        if not self.collection or not text or len(text.strip()) < 5:
+            return
+
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        doc_id = f"mem_{timestamp.replace(' ', '_').replace(':', '')}"
+
+        try:
+            self.collection.add(
+                documents=[text],
+                metadatas=[{"source": source, "timestamp": timestamp}],
+                ids=[doc_id]
+            )
+            print(f"[Memory]: Encoded and stored new long-term memory: '{text[:30]}...'")
+        except Exception as e:
+            print(f"[Memory Error]: Failed to store data - {e}")
+
+    def recall(self, query: str, n_results: int = 3) -> str:
+        """
+        Searches the database for memories semantically related to the query.
+        Returns them as a formatted string to inject into the LLM context.
+        """
+        if not self.collection:
+            return ""
+
+        try:
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=n_results
+            )
+            
+            if not results['documents'] or not results['documents'][0]:
+                return ""
+
+            recalled_facts = []
+            for i, doc in enumerate(results['documents'][0]):
+                meta = results['metadatas'][0][i]
+                recalled_facts.append(f"[{meta['timestamp']}] Past Knowledge: {doc}")
+
+            return "\n".join(recalled_facts)
+        except Exception as e:
+            print(f"[Memory Error]: Failed to recall data - {e}")
+            return ""

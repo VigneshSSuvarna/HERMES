@@ -4,7 +4,7 @@ import time
 import glob
 import threading
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QStyle
-
+from modules.daemon import HermesDaemon
 # Include root folder in sys.path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -289,6 +289,11 @@ def main():
     app.setQuitOnLastWindowClosed(False)
 
     brain = HermesBrain()
+    # Initialize and start the background Daemon
+    # Note: If you have a Text-To-Speech engine class, pass it here so he talks out loud!
+    # Example: daemon = HermesDaemon(tts_engine=my_voice_engine)
+    daemon = HermesDaemon()
+    daemon.start()
     ears = HermesEars()
     voice = HermesVoice()
     hands = HermesHands()

@@ -179,6 +179,45 @@ class HermesHands:
         self.launcher = WindowsUniversalLauncher()
         print("[Hands]: Universal Windows Automation Engine Initialized with Verbose Tracing.")
 
+    def open_whatsapp_chat(self, contact_name: str) -> str:
+        """
+        Automates WhatsApp (Desktop app or Web) to search for a contact and open their chat.
+        """
+        try:
+            print(f"[Hands]: Opening WhatsApp and searching for contact: '{contact_name}'...")
+            
+            # 1. Bring WhatsApp or Chrome to focus (tries WhatsApp desktop app first, then browser fallback)
+            whatsapp_windows = [w for w in gw.getWindowsWithTitle('WhatsApp') if w.title]
+            
+            if whatsapp_windows:
+                w = whatsapp_windows[0]
+                if w.isMinimized:
+                    w.restore()
+                w.activate()
+                time.sleep(1.0)
+            else:
+                # Fallback: Open WhatsApp Web via default browser if desktop app isn't open
+                webbrowser.open("https://web.whatsapp.com")
+                print("[Hands]: WhatsApp Desktop app not found. Opening WhatsApp Web... waiting 6 seconds to load.")
+                time.sleep(6.0)
+
+            # 2. Press Ctrl + F to focus the chat search bar
+            pyautogui.hotkey('ctrl', 'f')
+            time.sleep(0.8)
+
+            # 3. Type the contact name cleanly
+            pyautogui.write(contact_name, interval=0.05)
+            time.sleep(1.2)
+
+            # 4. Press Enter to select the top matching contact/chat
+            pyautogui.press('enter')
+            time.sleep(0.5)
+
+            return f"Successfully opened WhatsApp chat for '{contact_name}', Sir."
+
+        except Exception as e:
+            return f"Failed to automate WhatsApp chat: {e}"
+
     def execute_action(self, action_type: str, target: str = "") -> str:
         action = action_type.strip().lower()
         target_val = target.strip()
@@ -192,6 +231,10 @@ class HermesHands:
                     return f"Successfully launched application: {target_val}"
                 else:
                     return f"Could not locate or launch '{target_val}' on this system."
+
+            # --- WHATSAPP GUI MACRO ---
+            elif action == "open_whatsapp":
+                return self.open_whatsapp_chat(target_val)
 
             # --- ADVANCED WINDOW MANAGEMENT ---
             elif action in ["maximize_window", "minimize_window", "restore_window", "close_active_window"]:
@@ -358,7 +401,6 @@ class HermesHands:
                     vol_level = max(0, min(100, vol_level)) # Clamp between 0 and 100
                     scalar = vol_level / 100.0
                     
-                    # Dual-layer volume method (Tries EndpointVolume first, falls back to COM cast)
                     try:
                         from pycaw.pycaw import AudioUtilities
                         devices = AudioUtilities.GetSpeakers()
