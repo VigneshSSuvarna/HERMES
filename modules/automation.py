@@ -319,16 +319,13 @@ class HermesHands:
                 except Exception as e:
                     return f"[Kill Error]: {e}"
 
-            # --- SYSTEM TERMINAL (GOD MODE) ---
+            # --- SYSTEM TERMINAL (GOD MODE) - NON-BLOCKING FIX ---
             elif action == "run_terminal":
-                print(f"[Hands]: Executing system command -> {target_val}")
+                print(f"[Hands]: Launching detached system command -> {target_val}")
                 try:
-                    result = subprocess.run(["powershell", "-Command", target_val], capture_output=True, text=True, timeout=10)
-                    if result.returncode == 0:
-                        out = result.stdout.strip()
-                        return f"Terminal execution successful. Output: {out[:100]}..." if out else "Terminal execution successful."
-                    else:
-                        return f"Terminal execution failed: {result.stderr.strip()}"
+                    # 🚀 THE FIX: Opens a new, visible CMD window without pausing Python
+                    subprocess.Popen(f'start cmd /k "{target_val}"', shell=True)
+                    return f"Terminal task launched successfully in the background."
                 except Exception as e:
                     return f"Terminal error: {e}"
 

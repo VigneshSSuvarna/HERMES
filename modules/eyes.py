@@ -1,6 +1,9 @@
 import os
 import cv2
-import pyautogui
+try:
+    import pyautogui
+except ImportError:
+    pyautogui = None
 from PIL import Image
 
 
@@ -8,15 +11,23 @@ class HermesEyes:
     """Handles real-time webcam captures and desktop screen snapshots for multimodal AI analysis."""
     def __init__(self):
         self.screenshot_path = "temp_vision_capture.jpg"
-        print("[Eyes]: Multimodal Vision Subsystem Initialized.")
+        print("[Eyes]: Blazing-fast Multimodal Vision Subsystem Initialized.")
 
     def capture_screen(self) -> str:
-        """Takes a high-resolution screenshot of the primary monitor."""
+        """Takes an ultra-fast, downscaled screenshot of the primary monitor for sub-second processing."""
         try:
+            if pyautogui is None:
+                print("[Eyes Error]: pyautogui package is missing.")
+                return None
+
             screenshot = pyautogui.screenshot()
-            # Resize slightly to optimize processing speed and payload size for the API
-            screenshot.thumbnail((1920, 1080))
-            screenshot.save(self.screenshot_path, "JPEG", quality=85)
+            
+            # ⚡ SPEED OPTIMIZATION: Downscale aggressively to max 1280px 
+            # This cuts network upload bottlenecks down to milliseconds!
+            screenshot.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
+            
+            # Save as optimized JPEG with compressed quality
+            screenshot.save(self.screenshot_path, "JPEG", quality=75)
             print(f"[Eyes]: Screen captured successfully: {self.screenshot_path}")
             return self.screenshot_path
         except Exception as e:

@@ -1,46 +1,55 @@
-print(">>> BRAIN FILE LOADED CORRECTLY <<<")
+print(">>> BRAIN FILE LOADED (GROQ ACCELERATED) CORRECTLY <<<")
 import os
 import sys
 import time
+import base64
 from PIL import Image
 from modules.memory import HermesMemory
 from modules.planner import HermesPlanner
-from modules.long_term_memory import HermesLongTermMemory
 
-# 🚀 Importing the modern Google GenAI SDK
+# Try to import HermesLongTermMemory with safety catch for PyTorch DLL issues
 try:
-    from google import genai
-    from google.genai import types
+    from modules.long_term_memory import HermesLongTermMemory
+except Exception as e:
+    print(f"[Memory Warning]: Long-term vector memory disabled due to dependency error: {e}")
+    HermesLongTermMemory = None
+
+# 🚀 Importing the Groq SDK for blazing-fast sub-second responses
+try:
+    from groq import Groq
 except ImportError:
-    print("\n[CRITICAL]: SDK missing! Run: pip install google-genai\n")
+    print("\n[CRITICAL]: Groq SDK missing! Run: pip install groq\n")
     sys.exit(1)
 
 class HermesBrain:
     def __init__(self):
-        # API Key initialization
-        self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        # API Key initialization (prioritizing GROQ_API_KEY environment variable)
+        self.api_key = os.getenv("GROQ_API_KEY", "").strip()
         self.client = None
         
-        if not self.api_key or self.api_key == "PASTE_YOUR_AQ_KEY_HERE":
-            print("\n[CRITICAL BRAIN ERROR]: API Key is empty! Cloud AI disabled.\n")
+        if not self.api_key or self.api_key.startswith("gsk_your_") or self.api_key == "PASTE_YOUR_AQ_KEY_HERE":
+            print("\n[CRITICAL BRAIN ERROR]: GROQ_API_KEY is missing or invalid in environment variables! Using fallback mode.\n")
         else:
             try:
-                self.client = genai.Client(api_key=self.api_key)
-                print("[Brain]: Connected to Gemini Cloud AI successfully.")
+                self.client = Groq(api_key=self.api_key)
+                print("[Brain]: Connected to Groq LPU Cloud successfully (Sub-second response active).")
             except Exception as e:
                 print(f"\n[CRITICAL AUTHENTICATION ERROR]: {e}\n")
 
-        # ⚡ STREAMLINED: Fast working models to eliminate lag & waterfall delay
-        self.models_to_try = [
-            "gemini-2.0-flash",
-            "gemini-flash-latest"
-        ]
+        # Lightning-fast Groq models (Updated active vision model: qwen/qwen3.6-27b)
+        self.text_model = "llama-3.3-70b-versatile"
+        self.vision_model = "qwen/qwen3.6-27b"
 
-        # 📚 Initialize Memory Subsystems
+        # 📚 Initialize Memory Subsystems safely
         self.memory = HermesMemory()
-        self.long_term_memory = HermesLongTermMemory()
-        
-        # 🧠 FIXED: Initialize Autonomous Planner Sub-system WITHOUT 'model_name'
+        self.long_term_memory = None
+        if HermesLongTermMemory is not None:
+            try:
+                self.long_term_memory = HermesLongTermMemory()
+            except Exception as mem_err:
+                print(f"[Memory Warning]: Long-term memory initialized with fallback mode: {mem_err}")
+
+        # 🧠 Initialize Autonomous Planner Sub-system
         self.planner = HermesPlanner(self.client) if self.client else None
 
         # UNIFIED SYSTEM PROMPT
@@ -70,8 +79,22 @@ class HermesBrain:
             "- fetch_weather (Example: COMMAND: fetch_weather | TARGET: london)\n"
             "- fetch_info (Example: COMMAND: fetch_info | TARGET: quantum physics)\n"
             "- set_volume (Example: COMMAND: set_volume | TARGET: 50)\n"
-            "- minimize_all, volume_up, volume_down, mute, media_play_pause"
+            "- minimize_all, volume_up, volume_down, mute, media_play_pause\n"
             "- open_whatsapp (Example: COMMAND: open_whatsapp | TARGET: Vignesh)\n"
+            "You are HERMES, an advanced AI desktop operating system assistant. You address the user as 'Sir'.\n"
+            "CRITICAL PROTOCOL: You have direct, god-level control over the Windows OS and Live Internet.\n"
+            "You are an AUTONOMOUS AGENT. If the user asks you to do something complex or compound (e.g. open YouTube and search for something), you must use efficient execution paths.\n\n"
+            "--- UNIVERSAL AUTOMATION RULES ---\n"
+            "1. FOR WEB SEARCHES/YOUTUBE: Prefer using 'open_website' with a direct search URL format (e.g., https://www.youtube.com/results?search_query=python+tutorials) to execute searches instantly without GUI tabbing errors.\n"
+            "2. IF ALREADY ON YOUTUBE: To focus the search bar, use shortcut key '/' instead of tabbing (Sequence: hotkey | TARGET: /, wait | TARGET: 0.5, type_text | TARGET: query, press_key | TARGET: enter).\n"
+            "3. FOR OS SETTINGS/FILES: Use 'run_terminal' to execute PowerShell commands.\n\n"
+            "You MUST output commands using this EXACT strict syntax format:\n"
+            "COMMAND: [action_type] | TARGET: [target_value]"
+            "--- UNIVERSAL AUTOMATION RULES ---\n"
+            "1. FOR WEB SEARCHES/BROWSING: Use 'open_website' with a direct search URL format.\n"
+            "2. FOR OS SETTINGS/FILES: Use 'run_terminal' to execute PowerShell commands.\n"
+            "3. FOR SYSTEM CLEANUP & REPAIR: You MUST use 'run_terminal | TARGET: cleanmgr /sagerun:1' to clean the disk. NEVER use 'Clean-Manager'. Use 'sfc /scannow' for system file checks.\n"
+            "4. FOR APP UI CONTROL: Chain 'open_app', 'wait', and typing/hotkeys to navigate GUIs.\n\n"
         )
 
     def _fallback_think(self, text: str) -> str:
@@ -134,8 +157,13 @@ class HermesBrain:
         # 1. Get Short-Term Context
         short_term_context = self.memory.get_context_string(limit=5)
         
-        # 2. 🧠 RECALL: Search Long-Term Memory for relevant past information
-        past_memories = self.long_term_memory.recall(cleaned_text)
+        # 2. 🧠 RECALL: Search Long-Term Memory if available
+        past_memories = ""
+        if self.long_term_memory:
+            try:
+                past_memories = self.long_term_memory.recall(cleaned_text)
+            except Exception:
+                pass
         
         # 3. Combine contexts seamlessly for the Brain
         context = f"--- PAST LONG-TERM MEMORIES ---\n{past_memories}\n\n--- RECENT CHAT HISTORY ---\n{short_term_context}"
@@ -149,53 +177,37 @@ class HermesBrain:
                 print("[Brain]: Routing request to Autonomous Multi-Step Planner...")
                 reply = self.planner.run_multi_step_plan(f"Context:\n{context}\nUser Goal: {cleaned_text}")
             else:
-                full_prompt = f"{self.system_prompt}\n\nContext:\n{context}\nUser: {cleaned_text}\nHERMES:"
-                reply = None
-                for model_name in self.models_to_try:
-                    for attempt in range(2):
-                        try:
-                            response = self.client.models.generate_content(
-                                model=model_name,
-                                contents=full_prompt,
-                            )
-                            if response and response.text:
-                                reply = response.text.strip()
-                                break
-                        except Exception as e:
-                            err_str = str(e)
-                            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                                print(f"[Brain Quota Notice]: Rate limit hit on {model_name}. Pausing for 3s...")
-                                time.sleep(3.0)
-                            else:
-                                break
-                    if reply:
-                        break
+                messages = [
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": f"Context:\n{context}\nUser: {cleaned_text}"}
+                ]
+                
+                completion = self.client.chat.completions.create(
+                    model=self.text_model,
+                    messages=messages,
+                    temperature=0.3,
+                    max_tokens=1024
+                )
+                reply = completion.choices[0].message.content.strip()
 
-                if not reply:
-                    reply = self._fallback_think(cleaned_text)
-
-            # 🛡️ ANTI-POISONING SAFEGUARD & LONG TERM STORAGE
+            # 🛡️ ANTI-POISONING SAFEGUARD & MEMORY STORAGE
             try:
-                if reply and "429" not in reply and "RESOURCE_EXHAUSTED" not in reply and "Planner Error" not in reply:
-                    # Save to short-term memory
+                if reply and "Planner Error" not in reply:
                     self.memory.append_interaction("user", cleaned_text)
                     self.memory.append_interaction("hermes", reply)
                     
-                    # 💾 STORE: Save significant interactions to Long-Term Vector DB
-                    # We filter out short commands to save database space for actual knowledge
-                    if len(cleaned_text) > 15: 
-                        self.long_term_memory.remember(f"User asked/stated: {cleaned_text}")
-                    if len(reply) > 20 and "COMMAND:" not in reply:
-                        self.long_term_memory.remember(f"HERMES responded: {reply}")
-                else:
-                    print("[Memory]: System error detected. Excluded from context memory to prevent quota loops.")
+                    if self.long_term_memory:
+                        if len(cleaned_text) > 15: 
+                            self.long_term_memory.remember(f"User asked/stated: {cleaned_text}")
+                        if len(reply) > 20 and "COMMAND:" not in reply:
+                            self.long_term_memory.remember(f"HERMES responded: {reply}")
             except Exception:
                 pass
 
             return reply
 
         except Exception as e:
-            print(f"[Brain Execution Error]: {e}")
+            print(f"[Groq Brain Execution Error]: {e}")
             return self._fallback_think(cleaned_text)
 
     def think_with_vision(self, user_text: str, image_path: str) -> str:
@@ -205,32 +217,36 @@ class HermesBrain:
             if not os.path.exists(image_path):
                 return "Sir, screenshot file not found."
             
-            with open(image_path, "rb") as f:
-                image_bytes = f.read()
+            with open(image_path, "rb") as image_file:
+                encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
 
             mime_type = "image/png" if image_path.lower().endswith(".png") else "image/jpeg"
 
-            prompt = (
-                "You are HERMES, an advanced AI operating system assistant addressing the user as 'Sir'.\n"
-                f"Analyze this image and answer: {user_text}"
-            )
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text", 
+                            "text": f"You are HERMES, an advanced AI operating system assistant addressing the user as 'Sir'. Analyze this image and answer: {user_text}"
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{encoded_image}"
+                            }
+                        }
+                    ]
+                }
+            ]
 
-            for model_name in self.models_to_try:
-                try:
-                    response = self.client.models.generate_content(
-                        model=model_name,
-                        contents=[
-                            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                            prompt
-                        ]
-                    )
-                    if response and response.text:
-                        return response.text.strip()
-                except Exception as e:
-                    if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                        print(f"[Vision Quota Notice]: Rate limit hit on {model_name}. Pausing for 3s...")
-                        time.sleep(3.0)
-                    continue
-            return "Sir, visual analysis is temporarily rate-limited or failed."
+            completion = self.client.chat.completions.create(
+                model=self.vision_model,
+                messages=messages,
+                temperature=0.2,
+                max_tokens=1024
+            )
+            return completion.choices[0].message.content.strip()
         except Exception as e:
-            return f"[Eyes System Error]: {e}"
+            print(f"[Groq Vision Error]: {e}")
+            return f"Sir, visual analysis failed: {e}"
