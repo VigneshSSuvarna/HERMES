@@ -10,7 +10,53 @@ from PyQt5.QtGui import QFont
 # Importing the Core UI Modules
 from ui.hud_core import CentralArcReactor
 from ui.hud_widgets import HexagonGauge, CyberOscilloscope, StorageDiagnosticsPanel, LiveVisionFeed
+from PyQt5.QtCore import pyqtSignal, QObject
 
+class DashboardSignals(QObject):
+    log_signal = pyqtSignal(str)
+    state_signal = pyqtSignal(str, str) # (state_name, subtitle)
+
+class HermesDashboard(QMainWindow):
+    def __init__(self, command_callback=None):
+        super().__init__()
+        self.command_callback = command_callback
+        self.signals = DashboardSignals()
+        
+        # Connect signals to UI update slots safely on the main thread
+        self.signals.log_signal.connect(self._append_log)
+        self.signals.state_signal.connect(self._update_state_ui)
+        
+        self.init_ui()
+    def log(self, message: str):
+        # Thread-safe log method callable from any background thread
+        self.signals.log_signal.emit(message)
+
+    def set_voice_state(self, state: str, subtitle: str = ""):
+        # Thread-safe state update method
+        self.signals.state_signal.emit(state, subtitle)
+
+    def _append_log(self, message: str):
+        # Actual UI update running on the main PyQt thread
+        self.console_text.append(message)
+        # Auto-scroll to bottom
+        self.console_text.verticalScrollBar().setValue(
+            self.console_text.verticalScrollBar().maximum()
+        )
+
+    def _update_state_ui(self, state: str, subtitle: str):
+        # Visual state machine rendering (glow, colors, waveforms)
+        if state == "LISTENING":
+            self.status_display.setStyleSheet("color: #00ffc8; border: 1px solid #00ffc8;")
+            self.status_display.setText("LISTENING [ACTIVE]")
+        elif state == "PROCESSING":
+            self.status_display.setStyleSheet("color: #ffa500; border: 1px solid #ffa500;")
+            self.status_display.setText("PROCESSING NEURAL COMMAND...")
+        elif state == "SPEAKING":
+            self.status_display.setStyleSheet("color: #00ff00; border: 1px solid #00ff00;")
+            self.status_display.setText("TRANSMITTING SPEECH...")
+        
+        if subtitle:
+            self.sub_display.setText(subtitle)
 
 class LogBridge(QObject):
     log_signal = pyqtSignal(str)

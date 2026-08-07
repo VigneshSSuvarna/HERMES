@@ -1,29 +1,20 @@
-import chromadb
-from chromadb.utils import embedding_functions
 import os
 import datetime
+import chromadb
+from chromadb.utils import embedding_functions
 
 class HermesLongTermMemory:
     def __init__(self, db_path="data/chroma_db"):
-        print("[Memory Subsystem]: Initializing ChromaDB Long-Term Storage...")
+        print("[Memory Subsystem]: Initializing ChromaDB Long-Term Storage (Local Embeddings)...")
         
         # Create a persistent local database on your hard drive
         os.makedirs(db_path, exist_ok=True)
         self.client = chromadb.PersistentClient(path=db_path)
         
-        # 🔑 SECURE: Fetch API key safely from environment variables
-        self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        
-        if not self.api_key:
-            print("[Memory Warning]: API Key missing in long_term_memory.py. RAG disabled.")
-            self.collection = None
-            return
-
         try:
-            # 🚀 Use Google's lightweight embedding API instead of heavy local PyTorch models
-            self.embedding_fn = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
-                api_key=self.api_key,
-                task_type="RETRIEVAL_DOCUMENT"
+            # Use lightweight local SentenceTransformer embeddings to avoid Google API/package deprecation conflicts
+            self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name="all-MiniLM-L6-v2"
             )
             
             # Create or load the memory "collection"
@@ -31,9 +22,9 @@ class HermesLongTermMemory:
                 name="hermes_memories",
                 embedding_function=self.embedding_fn
             )
-            print("[Memory Subsystem]: Long-Term Storage Online and Ready (Google Embeddings).")
+            print("[Memory Subsystem]: Long-Term Storage Online and Ready (Local Embeddings Active).")
         except Exception as e:
-            print(f"[Memory Error]: Failed to initialize Google Embeddings - {e}")
+            print(f"[Memory Error]: Failed to initialize local embeddings - {e}")
             self.collection = None
 
     def remember(self, text: str, source: str = "conversation"):
