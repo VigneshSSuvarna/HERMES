@@ -1,0 +1,142 @@
+>>> BRAIN FILE LOADED (GROQ ACCELERATED) CORRECTLY <<<
+pygame 2.6.1 (SDL 2.28.4, Python 3.13.14)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+[Brain]: Connected to Groq LPU Cloud successfully (Sub-second response active).
+[Context Engine]: Initializing Ambient Context Gathering...
+[Context Engine]: Ambient Window & Clipboard surveillance active.
+[Memory Subsystem]: Initializing ChromaDB Long-Term Storage (Local Embeddings)...
+[Memory Error]: Failed to initialize local embeddings - [WinError 1114] A dynamic link library (DLL) initialization routine failed. Error loading "C:\Users\vignesh suvarna\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\lib\c10.dll" or one of its dependencies.
+[Daemon]: Initializing Background Proactive Subsystem...
+[Daemon]: Proactive threaded monitoring active. HERMES is watching.
+[Ears]: Direct Continuous Listening Active (Wake Word Disabled).
+[Launcher]: Cached 97 application shortcuts from system directories.
+[Hands]: Universal Windows Automation Engine Initialized with Verbose Tracing.
+[Eyes]: Blazing-fast Multimodal Vision Subsystem Initialized.
+[Internet]: Global Web Uplink Active.
+
+--- TRACE: RAW BRAIN OUTPUT ---
+To retrieve the recently viewed windows or text, Sir.
+COMMAND: run_terminal | TARGET: Get-Process -IncludeUsername | Select-Object -Property MainWindowTitle
+COMMAND: wait | TARGET: 1.0
+COMMAND: type_text | TARGET: recent windows
+COMMAND: press_key | TARGET: enter
+COMMAND: wait | TARGET: 1.5
+COMMAND: hotkey | TARGET: ctrl+a
+COMMAND: hotkey | TARGET: ctrl+c
+COMMAND: open_app | TARGET: notepad
+COMMAND: wait | TARGET: 1.0
+COMMAND: hotkey | TARGET: ctrl+v
+COMMAND: press_key | TARGET: enter
+
+Alternatively, to view the recent clipboard history, Sir.
+COMMAND: open_app | TARGET: clipbrd
+COMMAND: wait | TARGET: 1.0
+COMMAND: hotkey | TARGET: ctrl+home
+COMMAND: scroll | TARGET: -500
+COMMAND: wait | TARGET: 1.0
+COMMAND: hotkey | TARGET: ctrl+a
+COMMAND: hotkey | TARGET: ctrl+c
+COMMAND: open_app | TARGET: notepad
+COMMAND: wait | TARGET: 1.0
+COMMAND: hotkey | TARGET: ctrl+v
+COMMAND: press_key | TARGET: enter
+
+Please let me know if you need further assistance, Sir.
+-------------------------------
+[TRACE]: Parsing line -> COMMAND: run_terminal | TARGET: Get-Process -IncludeUsername | Select-Object -Property MainWindowTitle
+[TRACE]: Successfully Dispatched -> Action: 'run_terminal', Target: 'Get-Process -IncludeUsername'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='run_terminal', Target='Get-Process -IncludeUsername'
+[Hands]: Launching detached system command -> Get-Process -IncludeUsername
+[TRACE]: Hands returned -> Terminal task launched successfully in the background.
+[TRACE]: Parsing line -> COMMAND: wait | TARGET: 1.0
+[TRACE]: Successfully Dispatched -> Action: 'wait', Target: '1.0'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='wait', Target='1.0'
+[TRACE]: Hands returned -> Waited for 1.0 seconds.
+[TRACE]: Parsing line -> COMMAND: type_text | TARGET: recent windows
+[TRACE]: Successfully Dispatched -> Action: 'type_text', Target: 'recent windows'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='type_text', Target='recent windows'
+[TRACE]: Hands returned -> Typed requested text.
+[TRACE]: Parsing line -> COMMAND: press_key | TARGET: enter
+[TRACE]: Successfully Dispatched -> Action: 'press_key', Target: 'enter'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='press_key', Target='enter'
+[TRACE]: Hands returned -> Pressed key: enter
+[TRACE]: Parsing line -> COMMAND: wait | TARGET: 1.5
+[TRACE]: Successfully Dispatched -> Action: 'wait', Target: '1.5'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='wait', Target='1.5'
+[TRACE]: Hands returned -> Waited for 1.5 seconds.
+[TRACE]: Parsing line -> COMMAND: hotkey | TARGET: ctrl+a
+[TRACE]: Successfully Dispatched -> Action: 'hotkey', Target: 'ctrl+a'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='hotkey', Target='ctrl+a'
+[TRACE]: Hands returned -> Executed hotkey: ctrl+a
+[TRACE]: Parsing line -> COMMAND: hotkey | TARGET: ctrl+c
+[TRACE]: Successfully Dispatched -> Action: 'hotkey', Target: 'ctrl+c'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='hotkey', Target='ctrl+c'
+[TRACE]: Hands returned -> Executed hotkey: ctrl+c
+[TRACE]: Parsing line -> COMMAND: open_app | TARGET: notepad
+[TRACE]: Successfully Dispatched -> Action: 'open_app', Target: 'notepad'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='open_app', Target='notepad'
+[Launcher]: Executing nuclear bypass for 'notepad'...
+[Layer 1] Injecting 'notepad' into Windows Core...
+[Launcher]: Successfully focused window -> '*Akbar trailer - Notepad'
+[Layer 1] Execution sent successfully.
+[TRACE]: Hands returned -> Successfully launched application: notepad
+[TRACE]: Parsing line -> COMMAND: wait | TARGET: 1.0
+[TRACE]: Successfully Dispatched -> Action: 'wait', Target: '1.0'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='wait', Target='1.0'
+[TRACE]: Hands returned -> Waited for 1.0 seconds.
+[TRACE]: Parsing line -> COMMAND: hotkey | TARGET: ctrl+v
+[TRACE]: Successfully Dispatched -> Action: 'hotkey', Target: 'ctrl+v'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='hotkey', Target='ctrl+v'
+[TRACE]: Hands returned -> Executed hotkey: ctrl+v
+[TRACE]: Parsing line -> COMMAND: press_key | TARGET: enter
+[TRACE]: Successfully Dispatched -> Action: 'press_key', Target: 'enter'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='press_key', Target='enter'
+[TRACE]: Hands returned -> Pressed key: enter
+[TRACE]: Parsing line -> COMMAND: open_app | TARGET: clipbrd
+[TRACE]: Successfully Dispatched -> Action: 'open_app', Target: 'clipbrd'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='open_app', Target='clipbrd'
+[Launcher]: Executing nuclear bypass for 'clipbrd'...
+[Layer 1] Injecting 'clipbrd' into Windows Core...
+[Launcher]: Successfully focused window -> 'clipbrd'
+[Layer 1] Execution sent successfully.
+[TRACE]: Hands returned -> Successfully launched application: clipbrd
+[TRACE]: Parsing line -> COMMAND: wait | TARGET: 1.0
+[TRACE]: Successfully Dispatched -> Action: 'wait', Target: '1.0'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='wait', Target='1.0'
+[TRACE]: Hands returned -> Waited for 1.0 seconds.
+[TRACE]: Parsing line -> COMMAND: hotkey | TARGET: ctrl+home
+[TRACE]: Successfully Dispatched -> Action: 'hotkey', Target: 'ctrl+home'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='hotkey', Target='ctrl+home'
+[TRACE]: Hands returned -> Executed hotkey: ctrl+home
+[TRACE]: Parsing line -> COMMAND: scroll | TARGET: -500
+[TRACE]: Successfully Dispatched -> Action: 'scroll', Target: '-500'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='scroll', Target='-500'
+[TRACE]: Hands returned -> Scrolled screen by -500 units.
+[TRACE]: Parsing line -> COMMAND: wait | TARGET: 1.0
+[TRACE]: Successfully Dispatched -> Action: 'wait', Target: '1.0'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='wait', Target='1.0'
+The system cannot find the file clipbrd.
+[TRACE]: Hands returned -> Waited for 1.0 seconds.
+[TRACE]: Parsing line -> COMMAND: hotkey | TARGET: ctrl+a
+[TRACE]: Successfully Dispatched -> Action: 'hotkey', Target: 'ctrl+a'
+[TRACE]: Handing off to automation.py...
+[Hands Dispatch]: Action='hotkey', Target='ctrl+a'
+
+
+

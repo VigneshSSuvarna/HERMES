@@ -1,30 +1,23 @@
 import os
 import datetime
 import chromadb
-from chromadb.utils import embedding_functions
 
 class HermesLongTermMemory:
     def __init__(self, db_path="data/chroma_db"):
-        print("[Memory Subsystem]: Initializing ChromaDB Long-Term Storage (Local Embeddings)...")
+        print("[Memory Subsystem]: Initializing ChromaDB Long-Term Storage (Default Native Engine)...")
         
         # Create a persistent local database on your hard drive
         os.makedirs(db_path, exist_ok=True)
         self.client = chromadb.PersistentClient(path=db_path)
         
         try:
-            # Use lightweight local SentenceTransformer embeddings to avoid Google API/package deprecation conflicts
-            self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name="all-MiniLM-L6-v2"
-            )
-            
-            # Create or load the memory "collection"
+            # Use ChromaDB's native default embedding function (100% stable, offline, zero dependency conflicts)
             self.collection = self.client.get_or_create_collection(
-                name="hermes_memories",
-                embedding_function=self.embedding_fn
+                name="hermes_memories"
             )
-            print("[Memory Subsystem]: Long-Term Storage Online and Ready (Local Embeddings Active).")
+            print("[Memory Subsystem]: Long-Term Storage Online and Ready (Native Embeddings Active).")
         except Exception as e:
-            print(f"[Memory Error]: Failed to initialize local embeddings - {e}")
+            print(f"[Memory Error]: Failed to initialize collection - {e}")
             self.collection = None
 
     def remember(self, text: str, source: str = "conversation"):

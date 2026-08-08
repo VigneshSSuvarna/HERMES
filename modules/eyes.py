@@ -1,17 +1,17 @@
 import os
-import cv2
+from PIL import Image
+
 try:
     import pyautogui
 except ImportError:
     pyautogui = None
-from PIL import Image
 
 
 class HermesEyes:
-    """Handles real-time webcam captures and desktop screen snapshots for multimodal AI analysis."""
+    """Handles desktop screen snapshots for multimodal AI analysis without requiring a camera."""
     def __init__(self):
         self.screenshot_path = "temp_vision_capture.jpg"
-        print("[Eyes]: Blazing-fast Multimodal Vision Subsystem Initialized.")
+        print("[Eyes]: Blazing-fast Desktop Vision Subsystem Initialized (Camera Free).")
 
     def capture_screen(self) -> str:
         """Takes an ultra-fast, downscaled screenshot of the primary monitor for sub-second processing."""
@@ -23,7 +23,6 @@ class HermesEyes:
             screenshot = pyautogui.screenshot()
             
             # ⚡ SPEED OPTIMIZATION: Downscale aggressively to max 1280px 
-            # This cuts network upload bottlenecks down to milliseconds!
             screenshot.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
             
             # Save as optimized JPEG with compressed quality
@@ -32,25 +31,6 @@ class HermesEyes:
             return self.screenshot_path
         except Exception as e:
             print(f"[Eyes Error]: Screen capture failed: {e}")
-            return None
-
-    def capture_webcam(self) -> str:
-        """Captures a single frame from the live webcam feed."""
-        try:
-            cap = cv2.VideoCapture(0)
-            if not cap.isOpened():
-                print("[Eyes Warning]: No webcam detected.")
-                return None
-            
-            ret, frame = cap.read()
-            cap.release()
-            
-            if ret:
-                cv2.imwrite(self.screenshot_path, frame)
-                return self.screenshot_path
-            return None
-        except Exception as e:
-            print(f"[Eyes Error]: Webcam capture failed: {e}")
             return None
 
     def cleanup(self):

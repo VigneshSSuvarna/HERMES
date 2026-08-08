@@ -1,218 +1,90 @@
 import math
-import random
-import cv2
-from PyQt5.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
-from PyQt5.QtCore import QTimer, Qt, QPointF
-from PyQt5.QtGui import QPainter, QColor, QPen, QPolygonF, QFont
-from PyQt5.QtGui import QImage, QPixmap 
+import time
+import tkinter as tk
+from tkinter import Canvas
 
-class HexagonGauge(QFrame):
-    """Custom Hexagonal Vector Telemetry Gauge for CPU & RAM."""
-    def __init__(self, title="CPU", unit="%", subtext="", parent=None):
-        super().__init__(parent)
+class HexagonGauge(Canvas):
+    """Cyberpunk hexagonal visual progress / status gauge."""
+    def __init__(self, parent, width=120, height=120, title="SYSTEM"):
+        super().__init__(parent, width=width, height=height, bg="#0b0f19", highlightthickness=0)
+        self.width = width
+        self.height = height
         self.title = title
-        self.unit = unit
-        self.subtext = subtext
-        self.value = 0.0
-        self.setMinimumSize(160, 140)
+        self.progress = 75.0  # Percentage
+        self.draw_gauge()
 
-    def set_value(self, val, sub_val=""):
-        self.value = val
-        if sub_val:
-            self.subtext = sub_val
-        self.update()
+    def draw_gauge(self):
+        self.delete("all")
+        cx, cy = self.width / 2, self.height / 2
+        r = min(cx, cy) - 15
 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        w, h = self.width(), self.height()
-        cx, cy = w / 2, h / 2
-        r = min(cx, cy) - 12
-
-        # Hexagon Vertices Calculation
-        pts = []
+        # Draw outer rotating/hex ring lines
+        points = []
         for i in range(6):
-            angle_deg = 60 * i - 30
-            angle_rad = math.radians(angle_deg)
-            px = cx + r * math.cos(angle_rad)
-            py = cy + r * math.sin(angle_rad)
-            pts.append(QPointF(px, py))
+            angle = math.radians(i * 60 - 30)
+            x = cx + r * math.cos(angle)
+            y = cy + r * math.sin(angle)
+            points.append((x, y))
 
-        hex_poly = QPolygonF(pts)
-
-        # Draw Outer Hexagon Glow
-        painter.setPen(QPen(QColor(0, 240, 255, 60), 6))
-        painter.drawPolygon(hex_poly)
-
-        # Draw Inner Double Frame
-        painter.setPen(QPen(QColor(0, 240, 255, 220), 2))
-        painter.drawPolygon(hex_poly)
-
-        # Draw Text Content
-        painter.setFont(QFont("Consolas", 10, QFont.Bold))
-        painter.setPen(QPen(QColor(0, 240, 255)))
-        painter.drawText(0, int(cy - 28), w, 20, Qt.AlignCenter, self.title)
-
-        painter.setFont(QFont("Consolas", 18, QFont.Bold))
-        painter.setPen(QPen(QColor(255, 255, 255)))
-        painter.drawText(0, int(cy - 6), w, 28, Qt.AlignCenter, f"{self.value:.1f}{self.unit}")
-
-        if self.subtext:
-            painter.setFont(QFont("Consolas", 9, QFont.Bold))
-            painter.setPen(QPen(QColor(0, 240, 255, 180)))
-            painter.drawText(0, int(cy + 22), w, 20, Qt.AlignCenter, self.subtext)
-
-
-class CyberOscilloscope(QFrame):
-    """Live Green Audio Waveform Analyzer."""
-    def __init__(self, title="SIGNAL OSCILLOSCOPE", parent=None):
-        super().__init__(parent)
-        self.title = title
-        self.phase = 0.0
-        self.setStyleSheet("background-color: rgba(4, 10, 20, 230); border: 1px solid #00f0ff;")
-
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update)
-        self.timer.start(30)
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        w, h = self.width(), self.height()
-        self.phase += 0.15
-
-        # Header Title
-        painter.setFont(QFont("Consolas", 9, QFont.Bold))
-        painter.setPen(QPen(QColor(0, 240, 255)))
-        painter.drawText(10, 18, f"[ {self.title} ]")
-
-        # Grid Background
-        painter.setPen(QPen(QColor(0, 240, 255, 20), 1, Qt.DotLine))
-        for x in range(0, w, 20):
-            painter.drawLine(x, 25, x, h)
-        for y in range(25, h, 15):
-            painter.drawLine(0, y, w, y)
-
-        # Green Waveform Line
-        painter.setPen(QPen(QColor(0, 255, 136), 2))
-        cy = 25 + (h - 25) / 2
-        pts = []
-
-        for x in range(10, w - 10, 3):
-            y = cy + math.sin(x * 0.05 + self.phase) * 16 + random.uniform(-3, 3)
-            pts.append(QPointF(x, y))
-
-        for i in range(len(pts) - 1):
-            painter.drawLine(pts[i], pts[i + 1])
-
-        # Subtext Footer
-        painter.setFont(QFont("Consolas", 8, QFont.Bold))
-        painter.setPen(QPen(QColor(0, 240, 255, 180)))
-        painter.drawText(10, h - 8, "AUDIO LOGIC FEED // FREQ 44.1kHz")
-
-
-class StorageDiagnosticsPanel(QFrame):
-    """Top-Right Storage Drives & System Status Monitor."""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setStyleSheet("background-color: rgba(4, 10, 20, 230); border: 1px solid #00f0ff;")
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        # Storage Section
-        drive_box = QVBoxLayout()
-        lbl_drive_title = QLabel("[ STORAGE DRIVES ]")
-        lbl_drive_title.setFont(QFont("Consolas", 9, QFont.Bold))
-        lbl_drive_title.setStyleSheet("color: #00f0ff; border: none;")
-        drive_box.addWidget(lbl_drive_title)
-
-        self.lbl_c = QLabel("DRIVE C: 00%")
-        self.lbl_c.setFont(QFont("Consolas", 10, QFont.Bold))
-        self.lbl_c.setStyleSheet("color: #ffffff; border: none;")
-        drive_box.addWidget(self.lbl_c)
-
-        self.bar_c = QProgressBar()
-        self.bar_c.setFixedHeight(6)
-        self.bar_c.setTextVisible(False)
-        self.bar_c.setStyleSheet("QProgressBar{background:#02050a; border:1px solid #00f0ff;} QProgressBar::chunk{background:#00f0ff;}")
-        drive_box.addWidget(self.bar_c)
-
-        layout.addLayout(drive_box, 2)
-
-        # Diagnostics Status Box
-        diag_box = QVBoxLayout()
-        lbl_diag_title = QLabel("[ SYSTEM DIAGNOSTICS ]")
-        lbl_diag_title.setFont(QFont("Consolas", 9, QFont.Bold))
-        lbl_diag_title.setStyleSheet("color: #00f0ff; border: none;")
-        diag_box.addWidget(lbl_diag_title)
-
-        self.lbl_status = QLabel("NOMINAL")
-        self.lbl_status.setFont(QFont("Consolas", 16, QFont.Bold))
-        self.lbl_status.setStyleSheet("color: #00ff88; border: none;")
-        self.lbl_status.setAlignment(Qt.AlignCenter)
-        diag_box.addWidget(self.lbl_status)
-
-        layout.addLayout(diag_box, 1)
-
-    def set_storage_data(self, percent):
-        self.lbl_c.setText(f"DRIVE C: {int(percent)}%")
-        self.bar_c.setValue(int(percent))
-
-
-class LiveVisionFeed(QFrame):
-    """Real-Time Webcam Vision Feed for the HUD."""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setStyleSheet("background-color: rgba(4, 10, 20, 230); border: 1px solid #00f0ff;")
+        self.create_polygon(points, outline="#00ffcc", width=2, fill="")
         
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        
-        self.lbl_title = QLabel("[ SENSORY VISION FEED ]")
-        self.lbl_title.setFont(QFont("Consolas", 9, QFont.Bold))
-        self.lbl_title.setStyleSheet("color: #00f0ff; border: none;")
-        layout.addWidget(self.lbl_title)
-        
-        self.video_label = QLabel()
-        self.video_label.setAlignment(Qt.AlignCenter)
-        self.video_label.setStyleSheet("border: none; background-color: #000;")
-        layout.addWidget(self.video_label, 1)
-        
-        # Initialize Webcam (0 is usually the default laptop/USB camera)
-        self.cap = cv2.VideoCapture(0)
-        
-        # Timer to fetch frames at 30 FPS
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_frame)
-        self.timer.start(33)
+        # Inner text indicators
+        self.create_text(cx, cy - 8, text=self.title, fill="#00ffcc", font=("Consolas", 9, "bold"))
+        self.create_text(cx, cy + 10, text=f"{int(self.progress)}%", fill="#ffffff", font=("Consolas", 10))
 
-    def update_frame(self):
-        """Fetches a frame from the webcam and converts it to a PyQt Image."""
-        ret, frame = self.cap.read()
-        if ret:
-            # Flip horizontally for a mirror effect (optional)
-            frame = cv2.flip(frame, 1)
-            
-            # Convert OpenCV BGR format to RGB
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            
-            h, w, ch = frame.shape
-            bytes_per_line = ch * w
-            q_img = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
-            
-            # Scale the image to fit the HUD box perfectly
-            scaled_pixmap = QPixmap.fromImage(q_img).scaled(
-                self.video_label.width(), self.video_label.height(),
-                Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            self.video_label.setPixmap(scaled_pixmap)
+    def update_value(self, val: float):
+        self.progress = max(0.0, min(100.0, val))
+        self.draw_gauge()
 
-    def stop_feed(self):
-        """Safely release the camera when closing the app."""
-        self.timer.stop()
-        if self.cap.isOpened():
-            self.cap.release()
+
+class CyberOscilloscope(Canvas):
+    """Animated audio-reactive line wave visualizer."""
+    def __init__(self, parent, width=300, height=80):
+        super().__init__(parent, width=width, height=height, bg="#0b0f19", highlightthickness=0)
+        self.width = width
+        self.height = height
+        self.offset = 0
+        self.animate()
+
+    def animate(self):
+        self.delete("all")
+        cy = self.height / 2
+        points = []
+        
+        for x in range(0, self.width, 4):
+            # Sine wave modulation modulated by offset
+            y = cy + math.sin((x + self.offset) * 0.05) * 18 * math.sin(x * 0.01)
+            points.append((x, y))
+
+        if len(points) > 1:
+            self.create_line(points, fill="#00ffcc", width=2, smooth=True)
+
+        self.offset += 6
+        self.after(50, self.animate)
+
+
+class StorageDiagnosticsPanel(Canvas):
+    """System memory and storage status visualizer."""
+    def __init__(self, parent, width=220, height=120):
+        super().__init__(parent, width=width, height=height, bg="#0b0f19", highlightthickness=0)
+        self.width = width
+        self.height = height
+        self.draw_panel()
+
+    def draw_panel(self):
+        self.delete("all")
+        # Cyberpunk container outline
+        self.create_rectangle(5, 5, self.width - 5, self.height - 5, outline="#1f293d", width=1)
+        self.create_text(15, 15, text="CORE TELEMETRY", fill="#00ffcc", anchor="w", font=("Consolas", 9, "bold"))
+        
+        # Simulated metrics bars
+        metrics = [("CPU LPU LOAD", 0.42), ("RAM ALLOCATION", 0.68), ("CORE SYNC", 0.95)]
+        y = 35
+        for label, val in metrics:
+            self.create_text(15, y, text=label, fill="#8a99ad", anchor="w", font=("Consolas", 8))
+            # Bar background
+            self.create_rectangle(15, y + 10, self.width - 15, y + 16, fill="#161e2e", outline="")
+            # Bar fill
+            fill_width = int((self.width - 30) * val)
+            self.create_rectangle(15, y + 10, 15 + fill_width, y + 16, fill="#00ffcc", outline="")
+            y += 26

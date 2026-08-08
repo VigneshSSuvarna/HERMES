@@ -14,3 +14,5 @@ config/settings.py
 # Local databases and logs
 *.db
 *.log
+credentials.json
+token.json

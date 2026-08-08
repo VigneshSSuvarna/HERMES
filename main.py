@@ -8,17 +8,6 @@ import ctypes
 # -------------------------------------------------------------
 # 🛡️ GOD-MODE OVERRIDE (AUTO-ADMINISTRATOR)
 # -------------------------------------------------------------
-def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
-
-# If not running as admin, relaunch the script with elevated privileges
-if not is_admin():
-    print("[Security]: Requesting Administrator Privileges for Deep System Control...")
-    ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join([f'"{sys.argv[0]}"'] + sys.argv[1:]), None, 1)
-    sys.exit()
 
 # Include root folder in sys.path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -134,8 +123,6 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
     # -------------------------------------------------------------
     if any(k in cmd_clean.lower() for k in ["shutdown system", "exit hermes", "quit hermes"]):
         voice.speak("Shutting down systems. Goodbye, Sir.")
-        if hasattr(app, 'vision_box'):
-            app.vision_box.stop_feed()
         QApplication.quit()
         sys.exit(0)
 
@@ -156,7 +143,6 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
     # -------------------------------------------------------------
     cmd_lower_vision = cmd_clean.lower().replace('"', '').replace("'", "")
     
-    # Expanded vision triggers
     vision_triggers = [
         "look at my screen", 
         "analyze screen", 
@@ -203,7 +189,7 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
                 if os.path.exists(default_name):
                     image_file = default_name
                     break
-                    
+                
         if image_file and os.path.exists(image_file):
             app.log(f"[TRACE]: Found image file '{image_file}'. Handing to Vision AI...")
             response = brain.think_with_vision(f"Read and extract all text or describe what is visible in this image file: {target_name}", image_file)
@@ -259,7 +245,7 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
                         print(f"[TRACE]: Hands returned -> {exec_result}")
                         app.log(f"[Hands Output]: {exec_result}")
 
-            # ⚡ CONCISE SPEECH FILTER: Prevent long technical readouts
+            # ⚡ CONCISE SPEECH FILTER
             if not any(k in response for k in ["fetch_weather", "fetch_info"]):
                 if "open_website" in action_types_executed:
                     clean_reply = "Opening page, Sir."
@@ -371,7 +357,7 @@ def main():
     voice_thread.start()
 
     gui.log("[HERMES]: Systems online. Administrator privileges granted.")
-    sys.exit(app.exec_())
+    gui.run()
 
 
 if __name__ == "__main__":

@@ -3,7 +3,25 @@ import time
 import asyncio
 import edge_tts
 import pygame
+import threading
+import pyttsx3
+class HermesVoice:
+    def __init__(self):
+        self.engine = pyttsx3.init()
+        # Optimize speech rate for speed
+        self.engine.setProperty('rate', 190)
 
+    def speak(self, text: str):
+        """Sparks speech in a background thread to prevent freezing the main system loop."""
+        def _talk():
+            try:
+                self.engine.say(text)
+                self.engine.runAndWait()
+            except Exception:
+                pass
+        
+        speech_thread = threading.Thread(target=_talk, daemon=True)
+        speech_thread.start()
 
 class HermesVoice:
     def __init__(self, voice_model="en-GB-RyanNeural"):
