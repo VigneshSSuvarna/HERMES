@@ -3,16 +3,21 @@ import os
 import time
 import glob
 import threading
+import queue
+import re
 import ctypes
 
 # -------------------------------------------------------------
-# 🛡️ GOD-MODE OVERRIDE (AUTO-ADMINISTRATOR)
+# 🛡️ SYSTEM RESOURCE LIMITERS (PREVENTS LAG & FREEZING)
 # -------------------------------------------------------------
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Include root folder in sys.path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QStyle
 from modules.daemon import HermesDaemon
 from ui.dashboard import HermesDashboard
 from modules.brain import HermesBrain
@@ -22,14 +27,98 @@ from modules.automation import HermesHands
 from modules.eyes import HermesEyes
 from modules.internet import HermesInternet
 
+# -------------------------------------------------------------
+# 🚀 THE COMMAND QUEUE (PREVENTS UI FREEZING & COM ERRORS)
+# -------------------------------------------------------------
+command_queue = queue.Queue()
 
+def command_worker(app, brain, hands, voice, eyes, internet):
+    """Dedicated background worker that executes commands safely."""
+    try:
+        import pythoncom
+        pythoncom.CoInitialize()
+    except Exception as e:
+        print(f"[COM Warning]: Could not initialize Windows COM bridge: {e}")
+
+    while True:
+        cmd = command_queue.get() # Waits patiently for the next command
+        if cmd:
+            try:
+                process_command(cmd, app, brain, hands, voice, eyes, internet)
+            except Exception as e:
+                app.log(f"[Execution Warning]: {e}")
+        command_queue.task_done()
+
+# -------------------------------------------------------------
+# 🛡️ ISOLATED SELF-HEALING ERROR CORRECTION WATCHDOG
+# -------------------------------------------------------------
+def execute_with_self_healing(brain: HermesBrain, app: HermesDashboard, hands: HermesHands, action_type: str, target_val: str, max_retries: int = 2) -> str:
+    """Watchdog loop that catches errors and uses direct LLM inference to self-heal parameters."""
+    attempt = 0
+    current_target = target_val
+
+    while attempt <= max_retries:
+        try:
+            app.log(f"[Watchdog]: Executing '{action_type}' -> '{current_target}' (Attempt {attempt + 1})")
+            result = hands.execute_action(action_type, current_target)
+            
+            if result and isinstance(result, str) and any(err in result.lower() for err in ["error", "failed", "not found"]):
+                raise Exception(result)
+                
+            return str(result)
+
+        except Exception as e:
+            attempt += 1
+            error_trace = str(e).strip()
+            print(f"[Watchdog Error]: Execution crashed: {error_trace}")
+            
+            if attempt > max_retries:
+                return f"Execution failed permanently after {max_retries} attempts. Error: {error_trace}"
+
+            app.log("[Watchdog]: Error caught. Engaging Self-Healing Protocol...")
+            
+            # Direct LLM call bypassing planner triggers
+            correction = ""
+            try:
+                if brain.client:
+                    messages = [
+                        {"role": "system", "content": "You are a strict data-cleaning assistant. Given a failed OS command and its error, output ONLY the corrected target string (e.g. chrome, notepad). No punctuation, no markdown, no code blocks, no explanation."},
+                        {"role": "user", "content": f"Action: {action_type}\nFailed Target: {current_target}\nError: {error_trace}"}
+                    ]
+                    completion = brain.client.chat.completions.create(
+                        model=brain.text_model,
+                        messages=messages,
+                        temperature=0.1,
+                        max_tokens=15
+                    )
+                    correction = completion.choices[0].message.content.strip()
+                else:
+                    correction = current_target.rstrip('e') # Fallback typo trimmer
+            except Exception as llm_err:
+                print(f"[Watchdog AI Error]: {llm_err}")
+                correction = current_target
+
+            # Aggressive Regex Sanitization to isolate pure app/process names
+            words = re.findall(r'[a-zA-Z0-9_\-\.]+', correction)
+            if words:
+                stopwords = ["success", "output", "chrome", "process", "target", "action", "error", "failed", "not", "found", "process", "named"]
+                clean_candidates = [w.lower() for w in words if w.lower() not in stopwords]
+                correction = clean_candidates[-1] if clean_candidates else words[-1].lower()
+            else:
+                correction = current_target
+
+            app.log(f"[Watchdog]: Patch generated by Brain: '{correction}'")
+            current_target = correction
+            time.sleep(0.5)
+
+# -------------------------------------------------------------
+# 🧠 MAIN COMMAND PROCESSOR
+# -------------------------------------------------------------
 def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: HermesHands, voice: HermesVoice, eyes: HermesEyes, internet: HermesInternet):
-    # Strip whitespace and wrapping quotes to prevent artifact bugs
     cmd_clean = cmd.strip('"\' ')
     if not cmd_clean:
         return
 
-    # 🚀 WAKE-WORD & FILLER STRIPPER: Strip leading conversational prefixes
     cmd_lower_raw = cmd_clean.lower()
     for filler in ["hermes,", "hermes", "jarvis,", "jarvis", "please"]:
         if cmd_lower_raw.startswith(filler):
@@ -41,64 +130,65 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
         return
 
     response = ""
-
-    # Visual State: PROCESSING
     app.set_voice_state("PROCESSING", f"PROCESSING: '{cmd_clean.upper()}'")
     app.log(f"[OPERATOR COMMAND]: {cmd_clean}")
+    
+    cmd_lower = cmd_clean.lower()
     
     # -------------------------------------------------------------
     # ⚡ FAST-TRACK LOCAL OVERRIDES (Zero-Latency OS Controls)
     # -------------------------------------------------------------
-    cmd_lower = cmd_clean.lower()
     
-    # 1. Fast-Track: Opening Apps (Bypassed if it's a compound search command)
+    # 1. Fast-Track: Opening Apps
     if cmd_lower.startswith("open ") or cmd_lower.startswith("launch "):
         target = cmd_lower.replace("open ", "").replace("launch ", "").strip()
-        
-        # If it's a compound search command, let the Cloud Brain handle the macro chain!
         if "and search" in target or "search for" in target or " and " in target:
             pass  
         else:
             app.log(f"[Fast-Track]: Launching {target}")
-            exec_result = hands.execute_action("open_app", target)
+            exec_result = execute_with_self_healing(brain, app, hands, "open_app", target)
             print(f"[TRACE]: Fast-Track Hands -> {exec_result}")
             voice.speak(f"Opening {target}, Sir.")
             app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
             return
     
-    # Fast-Track: Dynamic Volume Control (Extracts ANY number dynamically)
+    # Fast-Track: Dynamic Volume Control
     if "volume" in cmd_lower:
         import re
         numbers = re.findall(r'\d+', cmd_lower)
         if numbers:
-            target_vol = numbers[0]  # Captures whatever number you said
+            target_vol = numbers[0]
             app.log(f"[Fast-Track]: Setting volume to {target_vol}%")
-            exec_result = hands.execute_action("set_volume", target_vol)
+            exec_result = execute_with_self_healing(brain, app, hands, "set_volume", target_vol)
             print(f"[TRACE]: Fast-Track Hands -> {exec_result}")
             voice.speak(f"Volume set to {target_vol} percent, Sir.")
         elif any(k in cmd_lower for k in ["up", "increase", "louder"]):
-            hands.execute_action("volume_up", "")
+            execute_with_self_healing(brain, app, hands, "volume_up", "")
             voice.speak("Increasing volume, Sir.")
         elif any(k in cmd_lower for k in ["down", "decrease", "quieter"]):
-            hands.execute_action("volume_down", "")
+            execute_with_self_healing(brain, app, hands, "volume_down", "")
             voice.speak("Decreasing volume, Sir.")
         elif "mute" in cmd_lower:
-            hands.execute_action("mute", "")
+            execute_with_self_healing(brain, app, hands, "mute", "")
             voice.speak("Toggling audio mute, Sir.")
             
         app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
         return
     
-    # 2. Fast-Track: Closing Apps & Windows
+    # 2. Fast-Track: Closing Apps & Windows (With Filler Phrase Stripping)
     if cmd_lower.startswith("close ") or cmd_lower.startswith("kill "):
         target = cmd_lower.replace("close ", "").replace("kill ", "").replace(" the ", "").strip()
         
+        for wrapper in ["a process named ", "process named ", "named ", "app named ", "program named "]:
+            if target.startswith(wrapper):
+                target = target[len(wrapper):].strip()
+
         if target in ["window", "this", "app", "application", "it"]:
             app.log(f"[Fast-Track]: Closing active window")
-            exec_result = hands.execute_action("close_active_window", "")
+            exec_result = execute_with_self_healing(brain, app, hands, "close_active_window", "")
         else:
             app.log(f"[Fast-Track]: Terminating {target}")
-            exec_result = hands.execute_action("kill_process", target)
+            exec_result = execute_with_self_healing(brain, app, hands, "kill_process", target)
             
         print(f"[TRACE]: Fast-Track Hands -> {exec_result}")
         voice.speak("Task executed, Sir.")
@@ -107,52 +197,38 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
 
     # 3. Fast-Track: Window Resizing
     if cmd_lower.startswith("maximize"):
-        hands.execute_action("maximize_window", "")
+        execute_with_self_healing(brain, app, hands, "maximize_window", "")
         voice.speak("Maximized, Sir.")
         app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
         return
         
     if cmd_lower.startswith("minimize"):
-        hands.execute_action("minimize_window", "")
+        execute_with_self_healing(brain, app, hands, "minimize_window", "")
         voice.speak("Minimized, Sir.")
         app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
         return
 
-    # -------------------------------------------------------------
     # SYSTEM & UI OVERRIDES
-    # -------------------------------------------------------------
     if any(k in cmd_clean.lower() for k in ["shutdown system", "exit hermes", "quit hermes"]):
         voice.speak("Shutting down systems. Goodbye, Sir.")
-        QApplication.quit()
-        sys.exit(0)
+        os._exit(0)
 
-    if any(k in cmd_clean.lower() for k in ["hide hud", "hide interface", "minimize to tray"]):
+    if any(k in cmd_clean.lower() for k in ["hide hud", "hide interface", "minimize to tray", "hide dashboard"]):
         app.hide()
-        voice.speak("Minimizing interface to system tray, Sir. I am still listening.")
+        voice.speak("Minimizing interface, Sir. I am still listening in the background.")
         app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
         return
 
-    if any(k in cmd_clean.lower() for k in ["show hud", "open interface", "bring up dashboard"]):
+    if any(k in cmd_clean.lower() for k in ["show hud", "open interface", "bring up dashboard", "show dashboard"]):
+        app.show()
         app.showFullScreen()
         voice.speak("Restoring visual interface, Sir.")
         app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
         return
 
-    # -------------------------------------------------------------
     # VISION & LOCAL IMAGE READING OVERRIDES
-    # -------------------------------------------------------------
     cmd_lower_vision = cmd_clean.lower().replace('"', '').replace("'", "")
-    
-    vision_triggers = [
-        "look at my screen", 
-        "analyze screen", 
-        "what is on my screen", 
-        "what is there on my screen",
-        "what do you see", 
-        "see my screen",
-        "whats on my screen",
-        "what's on my screen"
-    ]
+    vision_triggers = ["look at my screen", "analyze screen", "what is on my screen", "what is there on my screen", "what do you see", "see my screen", "whats on my screen", "what's on my screen"]
     
     if any(k in cmd_lower_vision for k in vision_triggers):
         app.log("[Eyes]: Capturing screen for neural vision analysis...")
@@ -202,17 +278,11 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
         app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
         return
 
-    # -------------------------------------------------------------
     # GENERAL AI BRAIN INGESTION
-    # -------------------------------------------------------------
     if not response:
         response = brain.think(cmd_clean)
 
-    # -------------------------------------------------------------
-    # COMMAND PARSER & EXECUTION (WITH CONCISE REPLY FILTERING)
-    # -------------------------------------------------------------
     clean_reply = response
-    
     print(f"\n--- TRACE: RAW BRAIN OUTPUT ---\n{response}\n-------------------------------")
 
     if "COMMAND:" in response:
@@ -240,12 +310,12 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
                         app.log(f"[Internet]: {exec_result}")
                         clean_reply = exec_result
                     else:
-                        print(f"[TRACE]: Handing off to automation.py...")
-                        exec_result = hands.execute_action(action_type, target_val)
+                        print(f"[TRACE]: Handing off to automation.py with Watchdog...")
+                        exec_result = execute_with_self_healing(brain, app, hands, action_type, target_val)
                         print(f"[TRACE]: Hands returned -> {exec_result}")
                         app.log(f"[Hands Output]: {exec_result}")
 
-            # ⚡ CONCISE SPEECH FILTER
+            # CONCISE SPEECH FILTER
             if not any(k in response for k in ["fetch_weather", "fetch_info"]):
                 if "open_website" in action_types_executed:
                     clean_reply = "Opening page, Sir."
@@ -296,7 +366,7 @@ def background_voice_loop(app, ears, brain, hands, voice, eyes, internet):
                     continue
 
                 app.log(f"[Voice Captured]: {voice_cmd}")
-                process_command(voice_cmd, app, brain, hands, voice, eyes, internet)
+                command_queue.put(voice_cmd)
             
             time.sleep(0.1)
         except Exception as e:
@@ -305,9 +375,6 @@ def background_voice_loop(app, ears, brain, hands, voice, eyes, internet):
 
 
 def main():
-    app = QApplication(sys.argv)
-    app.setQuitOnLastWindowClosed(False)
-
     brain = HermesBrain()
     daemon = HermesDaemon()
     daemon.start()
@@ -319,36 +386,19 @@ def main():
     internet = HermesInternet()
 
     def handle_gui_command(cmd_text):
-        threading.Thread(
-            target=process_command,
-            args=(cmd_text, gui, brain, hands, voice, eyes, internet),
-            daemon=True
-        ).start()
+        command_queue.put(cmd_text)
 
     gui = HermesDashboard(command_callback=handle_gui_command)
 
-    # -------------------------------------------------------------
-    # SYSTEM TRAY DAEMON
-    # -------------------------------------------------------------
-    tray_icon = QSystemTrayIcon(app.style().standardIcon(QStyle.SP_ComputerIcon), app)
-    tray_icon.setToolTip("HERMES AI Operating System")
-    
-    tray_menu = QMenu()
-    show_action = QAction("Show Dashboard", app)
-    show_action.triggered.connect(gui.showFullScreen)
-    hide_action = QAction("Hide Dashboard", app)
-    hide_action.triggered.connect(gui.hide)
-    quit_action = QAction("Shutdown HERMES", app)
-    quit_action.triggered.connect(lambda: sys.exit(0))
-    
-    tray_menu.addAction(show_action)
-    tray_menu.addAction(hide_action)
-    tray_menu.addSeparator()
-    tray_menu.addAction(quit_action)
-    
-    tray_icon.setContextMenu(tray_menu)
-    tray_icon.show()
+    # Start the single, hyper-stable worker thread
+    worker_thread = threading.Thread(
+        target=command_worker,
+        args=(gui, brain, hands, voice, eyes, internet),
+        daemon=True
+    )
+    worker_thread.start()
 
+    # Start voice loop
     voice_thread = threading.Thread(
         target=background_voice_loop,
         args=(gui, ears, brain, hands, voice, eyes, internet),

@@ -1,20 +1,20 @@
-import pyautogui
-import time
-import os
+import re
 
-def minimize_window():
-    pyautogui.keyDown('win')
-    pyautogui.press('down')
-    pyautogui.keyUp('win')
+def correct_target(target):
+    # Remove any non-alphanumeric characters
+    corrected_target = re.sub(r'[^a-zA-Z0-9]', '', target)
+    
+    # Remove any extra words that are not part of the process name
+    keywords = ["Autonomous", "Plan", "Executed", "Sir", "Execution", "Output", "SUCCESS"]
+    for keyword in keywords:
+        corrected_target = corrected_target.replace(keyword, "")
+        
+    # Remove any leading or trailing whitespace
+    corrected_target = corrected_target.strip()
+    
+    return corrected_target
 
-def open_notepad():
-    os.system('notepad.exe')
+target = "Autonomous Plan Executed, Sir. Execution Output: SUCCESS. Output: chrome"
+corrected_target = correct_target(target)
 
-def main():
-    minimize_window()
-    time.sleep(1)
-    open_notepad()
-    print('Window minimized and Notepad opened, Sir.')
-
-if __name__ == '__main__':
-    main()
+print(corrected_target)

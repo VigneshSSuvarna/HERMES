@@ -63,7 +63,8 @@ class WindowsUniversalLauncher:
                 os.remove(screenshot_path)
                 
             if "NOT_FOUND" in response or "," not in response:
-                return f"Could not visually locate '{description}' on the screen."
+                # ⚡ Updated for Self-Healing
+                return f"Error: Could not visually locate '{description}' on the screen. Target not found."
                 
             coords_str = response.strip().split()[0]
             x_str, y_str = coords_str.replace("(", "").replace(")", "").split(",")
@@ -77,7 +78,8 @@ class WindowsUniversalLauncher:
         except Exception as e:
             if os.path.exists(screenshot_path):
                 os.remove(screenshot_path)
-            return f"Visual click failed: {e}"
+            # ⚡ Updated for Self-Healing
+            return f"Error: Visual click failed: {e}"
 
     def launch(self, app_name: str) -> bool:
         target = app_name.strip().lower()
@@ -181,7 +183,8 @@ class HermesHands:
             return f"Successfully opened WhatsApp chat for '{contact_name}', Sir."
 
         except Exception as e:
-            return f"Failed to automate WhatsApp chat: {e}"
+            # ⚡ Updated for Self-Healing
+            return f"Error: Failed to automate WhatsApp chat: {e}"
 
     def get_ambient_history(self) -> str:
         """Non-blocking reader for recent ambient activity."""
@@ -194,7 +197,7 @@ class HermesHands:
                 recent = "".join(lines[-10:])
                 return f"Recent Ambient Activity Log:\n{recent}"
         except Exception as e:
-            return f"Could not read ambient history: {e}"
+            return f"Error: Could not read ambient history: {e}"
 
     def get_schedule_events(self) -> str:
         """Fetches upcoming Google Calendar events."""
@@ -205,7 +208,7 @@ class HermesHands:
         except ImportError:
             return "Sir, the calendar_sync module is missing."
         except Exception as e:
-            return f"Failed to retrieve Google Calendar events: {e}"
+            return f"Error: Failed to retrieve Google Calendar events: {e}"
 
     def execute_action(self, action_type: str, target: str = "") -> str:
         action = action_type.strip().lower()
@@ -215,7 +218,8 @@ class HermesHands:
         try:
             if action == "open_app":
                 success = self.launcher.launch(target_val)
-                return f"Successfully launched application: {target_val}" if success else f"Could not launch '{target_val}'."
+                # ⚡ Updated for Self-Healing (Includes "Failed" and "not found")
+                return f"Successfully launched application: {target_val}" if success else f"Failed to launch '{target_val}'. App not found."
 
             elif action == "open_whatsapp":
                 return self.open_whatsapp_chat(target_val)
@@ -237,7 +241,8 @@ class HermesHands:
                     elif action == "restore_window": win.restore()
                     elif action == "close_active_window": win.close()
                     return f"Executed {action} on {win.title}"
-                return f"Could not find window matching '{target_val}'"
+                # ⚡ Updated for Self-Healing
+                return f"Failed: Could not find window matching '{target_val}'"
 
             elif action == "focus_window":
                 windows = gw.getWindowsWithTitle(target_val)
@@ -246,12 +251,14 @@ class HermesHands:
                     if win.isMinimized: win.restore()
                     win.activate()
                     return f"Focused active window: {win.title}"
-                return f"Could not find an open window for '{target_val}'"
+                # ⚡ Updated for Self-Healing
+                return f"Failed: Window not found for '{target_val}'"
 
             elif action == "kill_process":
                 target_proc = target_val.lower().replace(".exe", "").strip()
                 result = subprocess.run(f"taskkill /F /IM {target_proc}.exe /T", shell=True, capture_output=True, text=True)
-                return f"Successfully terminated {target_val}." if result.returncode == 0 else f"Process {target_val} not found."
+                # ⚡ Updated for Self-Healing
+                return f"Successfully terminated {target_val}." if result.returncode == 0 else f"Failed: Process '{target_val}' not found."
 
             elif action == "run_terminal":
                 subprocess.Popen(f'start cmd /k "{target_val}"', shell=True)
@@ -318,9 +325,11 @@ class HermesHands:
                 return f"System volume set to {vol_level}%."
 
             else:
-                return f"Unknown system action: {action_type}"
+                # ⚡ Updated for Self-Healing
+                return f"Error: Unknown system action: {action_type}"
                 
         except Exception as e:
-            err_msg = f"[Execution Error]: {e}"
+            # ⚡ Updated for Self-Healing
+            err_msg = f"Error during execution: {e}"
             print(err_msg)
             return err_msg
