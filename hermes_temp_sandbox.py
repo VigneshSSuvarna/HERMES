@@ -1,20 +1,26 @@
-import re
+import requests
+import json
+import os
 
-def correct_target(target):
-    # Remove any non-alphanumeric characters
-    corrected_target = re.sub(r'[^a-zA-Z0-9]', '', target)
-    
-    # Remove any extra words that are not part of the process name
-    keywords = ["Autonomous", "Plan", "Executed", "Sir", "Execution", "Output", "SUCCESS"]
-    for keyword in keywords:
-        corrected_target = corrected_target.replace(keyword, "")
-        
-    # Remove any leading or trailing whitespace
-    corrected_target = corrected_target.strip()
-    
-    return corrected_target
+def get_ethereum_price():
+    url = 'https://min-api.cryptocompare.com/data/price?fsym=ETH&tsyms=USD'
+    response = requests.get(url)
+    data = response.json()
+    price = data['USD']
+    return price
 
-target = "Autonomous Plan Executed, Sir. Execution Output: SUCCESS. Output: chrome"
-corrected_target = correct_target(target)
+def save_price_to_file(price):
+    desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
+    filename = 'ethereum_price.txt'
+    filepath = os.path.join(desktop, filename)
+    with open(filepath, 'w') as file:
+        file.write(f'Current Ethereum price: {price} USD')
+    print('Ethereum price saved to file.')
 
-print(corrected_target)
+def main():
+    price = get_ethereum_price()
+    save_price_to_file(price)
+    print('Current Ethereum price fetched and saved to file on desktop.')
+
+if __name__ == '__main__':
+    main()

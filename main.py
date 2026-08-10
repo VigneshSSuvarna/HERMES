@@ -26,13 +26,14 @@ from modules.voice import HermesVoice
 from modules.automation import HermesHands
 from modules.eyes import HermesEyes
 from modules.internet import HermesInternet
+from modules.agent import HermesAgent  # ⚡ UNIVERSAL AGENT IMPORTED
 
 # -------------------------------------------------------------
 # 🚀 THE COMMAND QUEUE (PREVENTS UI FREEZING & COM ERRORS)
 # -------------------------------------------------------------
 command_queue = queue.Queue()
 
-def command_worker(app, brain, hands, voice, eyes, internet):
+def command_worker(app, brain, hands, voice, eyes, internet, agent):
     """Dedicated background worker that executes commands safely."""
     try:
         import pythoncom
@@ -44,7 +45,7 @@ def command_worker(app, brain, hands, voice, eyes, internet):
         cmd = command_queue.get() # Waits patiently for the next command
         if cmd:
             try:
-                process_command(cmd, app, brain, hands, voice, eyes, internet)
+                process_command(cmd, app, brain, hands, voice, eyes, internet, agent)
             except Exception as e:
                 app.log(f"[Execution Warning]: {e}")
         command_queue.task_done()
@@ -114,7 +115,7 @@ def execute_with_self_healing(brain: HermesBrain, app: HermesDashboard, hands: H
 # -------------------------------------------------------------
 # 🧠 MAIN COMMAND PROCESSOR
 # -------------------------------------------------------------
-def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: HermesHands, voice: HermesVoice, eyes: HermesEyes, internet: HermesInternet):
+def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: HermesHands, voice: HermesVoice, eyes: HermesEyes, internet: HermesInternet, agent: HermesAgent):
     cmd_clean = cmd.strip('"\' ')
     if not cmd_clean:
         return
@@ -278,6 +279,25 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
         app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
         return
 
+    # -------------------------------------------------------------
+    # 🧠 UNIVERSAL AGENTIC RE-ACT ROUTER (FOR UNRESTRICTED TASKS)
+    # -------------------------------------------------------------
+    complex_triggers = [
+        "organize", "scrape", "write a script", "find and move", 
+        "batch rename", "extract text from", "generate a report", "summarize files"
+    ]
+    
+    if any(trigger in cmd_lower for trigger in complex_triggers):
+        app.log("[Agent]: Routing request to Universal Autonomous Execution Agent...")
+        voice.speak("Synthesizing autonomous execution plan, Sir.")
+        
+        response = agent.execute_task(cmd_clean)
+        
+        app.log(f"[HERMES Agent Output]: {response}")
+        voice.speak("Autonomous task completed, Sir.")
+        app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+        return
+
     # GENERAL AI BRAIN INGESTION
     if not response:
         response = brain.think(cmd_clean)
@@ -360,8 +380,12 @@ def background_voice_loop(app, ears, brain, hands, voice, eyes, internet):
             if voice_cmd and len(voice_cmd.strip().split()) >= 1:
                 clean_cmd = voice_cmd.strip().lower()
                 
-                echo_phrases = ["acknowledged", "processing command", "sir", "neural speech", "acknowledged sir", "hermes", "at your service"]
-                if any(phrase in clean_cmd for phrase in echo_phrases) and len(clean_cmd.split()) <= 4:
+                echo_phrases = [
+                    "acknowledged", "processing command", "sir", "neural speech", 
+                    "acknowledged sir", "hermes", "at your service", 
+                    "synthesizing autonomous", "execution plan", "autonomous task completed"
+                ]
+                if any(phrase in clean_cmd for phrase in echo_phrases) and len(clean_cmd.split()) <= 8:
                     time.sleep(0.1)
                     continue
 
@@ -384,6 +408,7 @@ def main():
     hands = HermesHands()
     eyes = HermesEyes()
     internet = HermesInternet()
+    agent = HermesAgent(brain) # ⚡ Initialize the Universal Agent
 
     def handle_gui_command(cmd_text):
         command_queue.put(cmd_text)
@@ -393,7 +418,7 @@ def main():
     # Start the single, hyper-stable worker thread
     worker_thread = threading.Thread(
         target=command_worker,
-        args=(gui, brain, hands, voice, eyes, internet),
+        args=(gui, brain, hands, voice, eyes, internet, agent), # ⚡ Pass Agent to worker
         daemon=True
     )
     worker_thread.start()

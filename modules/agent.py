@@ -1,144 +1,88 @@
 import os
-import time
-import shutil
-import asyncio
-import psutil
-from pathlib import Path
-from modules.brain import HermesBrain
-from modules.voice import HermesVoice
+import subprocess
+import traceback
 
-class HermesAutonomousAgent:
-    def __init__(self):
-        self.brain = HermesBrain()
-        self.voice = HermesVoice()
-        self.is_running = True
-        self.ram_threshold_pct = 85.0
+class HermesAgent:
+    def __init__(self, brain):
+        self.brain = brain
+        self.sandbox_dir = "sandbox"
+        os.makedirs(self.sandbox_dir, exist_ok=True)
+        print("[Agent]: Universal Autonomous Script Synthesizer Initialized.")
+
+    def execute_task(self, user_goal: str) -> str:
+        print(f"[Agent]: Synthesizing execution plan for goal: '{user_goal}'")
         
-        # Define target folder for autonomous monitoring
-        self.downloads_folder = Path.home() / "Downloads"
+        prompt = (
+            f"You are a strict, silent code-generating compiler. The user wants to accomplish this goal: '{user_goal}'.\n"
+            f"Write a complete, self-contained Python script to accomplish this using standard libraries (os, shutil, datetime, glob, etc.).\n"
+            f"CRITICAL RULES:\n"
+            f"1. Output ONLY valid, executable Python code.\n"
+            f"2. DO NOT output any conversational text, greetings, or explanations whatsoever.\n"
+            f"3. Wrap the code in standard ```python ... ``` markdown blocks.\n"
+            f"4. If you need to output a status message, use standard Python print() statements."
+        )
         
-        # File categorization rules for autonomous sorting
-        self.file_categories = {
-            "Documents": [".pdf", ".docx", ".txt", ".xlsx", ".pptx", ".csv"],
-            "Images": [".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp"],
-            "Executables": [".exe", ".msi"],
-            "Archives": [".zip", ".rar", ".7z", ".tar", ".gz"]
-        }
+        response = self.brain.think(prompt)
+        code = self._extract_code(response)
         
-        # Folder names to skip completely during file scans
-        self.protected_folders = {"Documents", "Images", "Executables", "Archives"}
+        if not code or len(code) < 10:
+            return "Agent failed to synthesize a valid code script, Sir."
 
-    async def observe_system_telemetry(self):
-        """Phase 1: Gather RAM and CPU usage telemetry from the operating system kernel."""
-        try:
-            vm = psutil.virtual_memory()
-            cpu = psutil.cpu_percent(interval=None)
-            return {
-                "ram_usage_percent": vm.percent,
-                "available_ram_gb": round(vm.available / (1024**3), 2),
-                "cpu_usage_percent": cpu
-            }
-        except Exception as e:
-            print(f"[Telemetry Warning]: Could not fetch hardware metrics: {e}")
-            return {"ram_usage_percent": 0.0, "available_ram_gb": 0.0, "cpu_usage_percent": 0.0}
+        script_path = os.path.join(self.sandbox_dir, "dynamic_task.py")
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(code)
 
-    def _get_unique_target_path(self, target_file: Path) -> Path:
-        """Generates a unique path if a file with the same name already exists in destination."""
-        if not target_file.exists():
-            return target_file
-        
-        stem = target_file.stem
-        suffix = target_file.suffix
-        parent = target_file.parent
-        counter = 1
-        
-        while True:
-            new_path = parent / f"{stem}_{counter}{suffix}"
-            if not new_path.exists():
-                return new_path
-            counter += 1
-
-    async def auto_organize_downloads(self):
-        """Phase 2: Independent file watcher and auto-sorter with directory and OneDrive safety."""
-        if not self.downloads_folder.exists():
-            return 0
-
-        moved_count = 0
-        current_time = time.time()
-
-        try:
-            for item in self.downloads_folder.iterdir():
-                item_str = str(item)
-
-                # 1. Skip all directories and protected category subfolders
-                if os.path.isdir(item_str) or item.name in self.protected_folders:
-                    continue
-
-                # 2. Skip anything that isn't strictly a file
-                if not os.path.isfile(item_str):
-                    continue
-
-                # 3. Skip hidden files, system files, and active download extensions
-                if (
-                    item.name.startswith('.') 
-                    or item.name.lower().endswith(('.crdownload', '.tmp', '.part', '.download', '.ini'))
-                    or not item.suffix
-                ):
-                    continue
-
-                # 4. Ensure file has been untouched for at least 3 seconds (not mid-download)
-                try:
-                    file_age = current_time - item.stat().st_mtime
-                    if file_age < 3:
-                        continue
-                except Exception:
-                    continue
-
-                # 5. Categorize and move file safely
-                ext = item.suffix.lower()
-                for category, extensions in self.file_categories.items():
-                    if ext in extensions:
-                        target_dir = self.downloads_folder / category
-                        target_dir.mkdir(exist_ok=True)
-                        
-                        target_file = self._get_unique_target_path(target_dir / item.name)
-                        
-                        try:
-                            shutil.move(item_str, str(target_file))
-                            moved_count += 1
-                        except Exception:
-                            # Catch all permission/OneDrive lock errors silently
-                            pass
-                        break
-        except Exception as scan_err:
-            print(f"[Agent Directory Scan Warning]: {scan_err}")
-
-        return moved_count
-
-    async def execute_autonomous_loop(self):
-        """Phase 3: Continuous autonomous background monitoring loop."""
-        print("[Agent]: Autonomous Routine Engine Active in Background.")
-        
-        while self.is_running:
+        max_retries = 2
+        attempt = 0
+        while attempt <= max_retries:
             try:
-                # 1. Trigger File System Sorter
-                moved = await self.auto_organize_downloads()
-                if moved > 0:
-                    msg = f"Independently organized {moved} downloaded files, Sir."
-                    print(f"[Agent Action]: {msg}")
-                    await asyncio.to_thread(self.voice.speak, msg)
-
-                # 2. Trigger System Telemetry Check
-                telemetry = await self.observe_system_telemetry()
-                if telemetry["ram_usage_percent"] > self.ram_threshold_pct:
-                    print(f"[Agent Warning]: High RAM usage detected ({telemetry['ram_usage_percent']}%).")
-                    agent_prompt = f"SYSTEM ALERT: Current system RAM usage is high at {telemetry['ram_usage_percent']}%."
-                    decision = await asyncio.to_thread(self.brain.think, agent_prompt)
-                    await asyncio.to_thread(self.voice.speak, "System memory footprint is high, Sir. Re-allocating reserves.")
-
-                # Sleep for 30 seconds before running the next autonomous sweep
-                await asyncio.sleep(30)
+                print(f"[Agent Sandbox]: Running script (Attempt {attempt + 1})...")
+                res = subprocess.run(["python", script_path], capture_output=True, text=True, timeout=60)
                 
+                if res.returncode == 0:
+                    output = res.stdout.strip()
+                    return f"SUCCESS. Output:\n{output if output else 'Autonomous Plan Executed, Sir.'}"
+                else:
+                    raise Exception(res.stderr.strip())
+                    
             except Exception as e:
-                print(f"[Agent Loop Exception]: {e}")
-                await asyncio.sleep(5)
+                attempt += 1
+                err_trace = str(e)
+                print(f"[Agent Error]: Script crashed: {err_trace}")
+                
+                if attempt > max_retries:
+                    return f"Agent execution failed permanently after {max_retries} healing attempts. Error: {err_trace}"
+
+                print("[Agent Watchdog]: Engaging Self-Healing Patch...")
+                
+                healing_prompt = (
+                    f"This Python script crashed:\n\n```python\n{code}\n```\n\n"
+                    f"It threw this error:\n{err_trace}\n\n"
+                    f"Fix the bug. Output ONLY the corrected Python code inside a ```python ... ``` block. DO NOT include any conversational text."
+                )
+                
+                fix_response = self.brain.think(healing_prompt)
+                code = self._extract_code(fix_response)
+                
+                if code:
+                    with open(script_path, "w", encoding="utf-8") as f:
+                        f.write(code)
+
+    def _extract_code(self, text: str) -> str:
+        """Regex-Free Code Extraction to prevent syntax errors."""
+        extracted = text.strip()
+        
+        if "```python" in extracted:
+            parts = extracted.split("```python")
+            if len(parts) > 1:
+                extracted = parts[1].split("```")[0].strip()
+        elif "```" in extracted:
+            parts = extracted.split("```")
+            if len(parts) > 1:
+                extracted = parts[1].strip()
+        
+        # BULLETPROOF CHECK: If it doesn't have basic Python keywords, it's not code!
+        if not any(kw in extracted for kw in ["import ", "def ", "print(", "os."]):
+            return "" # Returning empty forces the system to say "failed to synthesize" instead of crashing
+            
+        return extracted

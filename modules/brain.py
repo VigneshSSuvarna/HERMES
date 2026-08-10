@@ -4,6 +4,7 @@ import sys
 import time
 import base64
 import requests
+import re  # Added for stripping <think> tags
 from PIL import Image
 from modules.memory import HermesMemory
 from modules.planner import HermesPlanner
@@ -25,16 +26,16 @@ except ImportError:
 
 class HermesBrain:
     def __init__(self):
-        # API Key initialization (prioritizing GROQ_API_KEY environment variable)
+        # API Key initialization
         self.api_key = os.getenv("GROQ_API_KEY", "").strip()
         self.client = None
         
         # --- LOCAL OFFLINE CONFIGURATION (OLLAMA) ---
         self.ollama_url = "http://localhost:11434/api/generate"
-        self.ollama_model = "llama3" # Fast local fallback model
+        self.ollama_model = "llama3" 
         
         if not self.api_key or self.api_key.startswith("gsk_your_") or self.api_key == "PASTE_YOUR_AQ_KEY_HERE":
-            print("\n[CRITICAL BRAIN ERROR]: GROQ_API_KEY is missing or invalid in environment variables! Using fallback mode.\n")
+            print("\n[CRITICAL BRAIN ERROR]: GROQ_API_KEY is missing or invalid! Using fallback mode.\n")
         else:
             try:
                 self.client = Groq(api_key=self.api_key)
@@ -42,27 +43,22 @@ class HermesBrain:
             except Exception as e:
                 print(f"\n[CRITICAL AUTHENTICATION ERROR]: {e}\n")
 
-        # 🌐 Initialize Ambient Context Monitor
         self.context_monitor = HermesContextMonitor()
         self.context_monitor.start()
 
-        # Lightning-fast Groq models
         self.text_model = "llama-3.3-70b-versatile"
-        self.vision_model = "qwen/qwen3.6-27b"
+        self.vision_model = "qwen/qwen3.6-27b" # Or llama-3.2-90b-vision-preview
 
-        # 📚 Initialize Memory Subsystems safely
         self.memory = HermesMemory()
         self.long_term_memory = None
         if HermesLongTermMemory is not None:
             try:
                 self.long_term_memory = HermesLongTermMemory()
             except Exception as mem_err:
-                print(f"[Memory Warning]: Long-term memory initialized with fallback mode: {mem_err}")
+                print(f"[Memory Warning]: Long-term memory fallback mode: {mem_err}")
 
-        # 🧠 Initialize Autonomous Planner Sub-system
         self.planner = HermesPlanner(self.client) if self.client else None
 
-        # UNIFIED CLEAN SYSTEM PROMPT
         self.system_prompt = (
             "You are HERMES, an advanced AI desktop operating system assistant. You address the user as 'Sir'.\n"
             "CRITICAL PROTOCOL: You have direct, god-level control over the Windows OS, Live Internet, and Google Calendar.\n"
@@ -77,128 +73,111 @@ class HermesBrain:
             "If the user asks about their schedule, calendar, meetings, or upcoming events, you MUST use this exact command format and NOTHING ELSE:\n"
             "COMMAND: get_schedule | TARGET: upcoming\n\n"
             "--- UNIVERSAL AUTOMATION RULES ---\n"
-            "1. FOR WEB SEARCHES/BROWSING: Use 'open_website' with a direct search URL format (e.g., https://www.google.com/search?q=python+tutorials).\n"
-            "2. DO NOT attempt to use 'ctrl+s' to save web pages or 'alt+f4' to close browsers for search requests. Keep web tasks to direct navigation.\n"
+            "1. FOR WEB SEARCHES/BROWSING: Use 'open_website' with a direct search URL format.\n"
+            "2. DO NOT attempt to use 'ctrl+s' to save web pages or 'alt+f4' to close browsers for search requests.\n"
             "3. FOR OS SETTINGS/FILES: Use 'run_terminal' to execute PowerShell commands.\n"
             "4. FOR APP UI CONTROL: Chain 'open_app', 'wait' (2-3 seconds), and typing/hotkeys to navigate GUIs.\n\n"
             "Supported action_types:\n"
-            "- run_terminal (Example: COMMAND: run_terminal | TARGET: Get-Process)\n"
-            "- open_app (Example: COMMAND: open_app | TARGET: chrome)\n"
-            "- open_website (Example: COMMAND: open_website | TARGET: https://www.google.com)\n"
-            "- get_context (Example: COMMAND: get_context | TARGET: ambient)\n"
-            "- get_schedule (Example: COMMAND: get_schedule | TARGET: upcoming)\n"
-            "- focus_window, close_active_window, kill_process, type_text, hotkey, press_key, scroll, wait, fetch_weather, fetch_info, set_volume, open_whatsapp\n"
+            "- run_terminal, open_app, open_website, get_context, get_schedule, focus_window, close_active_window, kill_process, type_text, hotkey, press_key, scroll, wait, fetch_weather, fetch_info, set_volume, open_whatsapp\n"
         )
 
-    def _think_local(self, context_prompt: str, user_input: str) -> str:
-        """Executes command using the local hardware weights via Ollama."""
+    def _think_local(self, context_prompt: str, user_input: str, timeout: float = 5.0) -> str:
         try:
             payload = {
                 "model": self.ollama_model,
-                "prompt": f"{self.system_prompt}\n\n{context_prompt}\nOperator: {user_input}\nHERMES:",
+                "prompt": f"{context_prompt}\nOperator: {user_input}\nHERMES:",
                 "stream": False
             }
-            # Hits the local Ollama API
-            response = requests.post(self.ollama_url, json=payload, timeout=30)
+            start_time = time.time()
+            response = requests.post(self.ollama_url, json=payload, timeout=timeout)
             response.raise_for_status()
             data = response.json()
             
-            print("[Brain]: Successfully generated response via Local Edge Compute (Ollama).")
+            elapsed = time.time() - start_time
+            print(f"[Brain]: ⚡ Answered by LOCAL OLLAMA ({self.ollama_model}) in {elapsed:.2f}s")
             return data.get("response", "").strip()
-            
-        except requests.exceptions.ConnectionError:
-            return "Sir, cloud systems are offline, and the local edge engine (Ollama) is not running in the background."
         except Exception as e:
-            return f"Sir, critical network failure across both cloud and local edge architectures: {e}"
+            print(f"[Brain Warning]: Local Edge Engine offline or timed out: {e}")
+            return None
 
     def _fallback_think(self, text: str) -> str:
-        """Hardcoded fallback logic if both APIs fail completely."""
-        cmd = text.lower().strip()
-
-        if any(k in cmd for k in ["recent window", "clipboard", "looked at", "ambient", "history"]):
-            return "COMMAND: get_context | TARGET: ambient\n\nRetrieving recent ambient activity, Sir."
-
-        if any(k in cmd for k in ["schedule", "calendar", "meetings", "upcoming events"]):
-            return "COMMAND: get_schedule | TARGET: upcoming\n\nAccessing your Google Calendar, Sir."
-
-        if "search for" in cmd or "search" in cmd:
-            query = cmd.replace("open chrome and search for", "").replace("search for", "").replace("search", "").strip()
-            formatted_query = query.replace(" ", "+")
-            return f"COMMAND: open_website | TARGET: https://www.google.com/search?q={formatted_query}\n\nSearching for {query}, Sir."
-
-        if any(cmd.startswith(prefix) for prefix in ["open ", "launch ", "start ", "run "]):
-            for prefix in ["open ", "launch ", "start ", "run "]:
-                if cmd.startswith(prefix):
-                    target = cmd.replace(prefix, "").strip()
-                    break
-            if any(dom in target for dom in [".com", ".org", ".net", "youtube", "google", "github"]):
-                return f"COMMAND: open_website | TARGET: {target}\n\nOpening website: {target}, Sir."
-            return f"COMMAND: open_app | TARGET: {target}\n\nLaunching {target}, Sir."
-
         return f"Acknowledged, Sir. Processing command: '{text}'"
 
-    def think(self, user_text: str) -> str:
-        """HYBRID ROUTER: Attempts Cloud API first, falls back to Local LLM if offline."""
+    def _save_memory(self, user_text: str, hermes_reply: str):
+        try:
+            if hermes_reply and "Planner Error" not in hermes_reply:
+                self.memory.append_interaction("user", user_text)
+                self.memory.append_interaction("hermes", hermes_reply)
+        except Exception:
+            pass
+
+    def think(self, user_text: str, max_retries: int = 2) -> str:
         cleaned_text = user_text.strip() if user_text else ""
         if len(cleaned_text) < 2:
             return "Sir, I heard no actionable command."
 
-        # Gather Context
-        short_term_context = self.memory.get_context_string(limit=5)
-        past_memories = ""
-        if self.long_term_memory:
-            try:
-                past_memories = self.long_term_memory.recall(cleaned_text)
-            except Exception:
-                pass
+        # ⚡ BUG 1 FIX: Detect if the Agent is asking for code, and bypass HERMES persona
+        is_agent_mode = "strict, silent code-generating compiler" in cleaned_text
 
-        ambient_history = self.context_monitor.get_recent_context()
-        context = f"--- AMBIENT SYSTEM HISTORY ---\n{ambient_history}\n\n--- PAST MEMORIES ---\n{past_memories}\n\n--- RECENT CHAT ---\n{short_term_context}"
-        
+        if is_agent_mode:
+            context = ""
+            messages = [{"role": "user", "content": cleaned_text}]
+        else:
+            short_term_context = self.memory.get_context_string(limit=5)
+            past_memories = ""
+            if self.long_term_memory:
+                try: past_memories = self.long_term_memory.recall(cleaned_text)
+                except Exception: pass
+            ambient_history = self.context_monitor.get_recent_context()
+            context = f"--- AMBIENT SYSTEM HISTORY ---\n{ambient_history}\n\n--- PAST MEMORIES ---\n{past_memories}\n\n--- RECENT CHAT ---\n{short_term_context}"
+            
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": f"Context:\n{context}\nUser: {cleaned_text}"}
+            ]
+
         complex_keywords = ["then", "after that", "search for", "write a script", "calculate", "find out", "analyze", "create a file"]
         is_complex = any(kw in cleaned_text.lower() for kw in complex_keywords)
 
-        # 1. TRY CLOUD UPLINK FIRST
-        if self.client:
-            try:
-                if is_complex and self.planner:
-                    print("[Brain]: Routing request to Autonomous Multi-Step Planner...")
-                    reply = self.planner.run_multi_step_plan(f"Context:\n{context}\nUser Goal: {cleaned_text}")
-                else:
-                    messages = [
-                        {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": f"Context:\n{context}\nUser: {cleaned_text}"}
-                    ]
-                    
-                    completion = self.client.chat.completions.create(
-                        model=self.text_model,
-                        messages=messages,
-                        temperature=0.3,
-                        max_tokens=1024,
-                        timeout=7 # Fast timeout so failover happens quickly if internet drops
-                    )
-                    reply = completion.choices[0].message.content.strip()
+        attempt = 0
+        while attempt <= max_retries:
+            attempt += 1
 
+            if not is_agent_mode:
+                print("[Brain]: ⚡ Attempting Local Edge Compute (Ollama)...")
+                local_response = self._think_local(f"{self.system_prompt}\n{context}", cleaned_text, timeout=5.0)
+                if local_response:
+                    self._save_memory(cleaned_text, local_response)
+                    return local_response
+
+            print("[Brain]: 🔄 Routing to Cloud provider (Groq)...")
+            if self.client:
                 try:
-                    if reply and "Planner Error" not in reply:
-                        self.memory.append_interaction("user", cleaned_text)
-                        self.memory.append_interaction("hermes", reply)
-                except Exception:
-                    pass
-                return reply
+                    if is_complex and self.planner and not is_agent_mode:
+                        reply = self.planner.run_multi_step_plan(f"Context:\n{context}\nUser Goal: {cleaned_text}")
+                    else:
+                        completion = self.client.chat.completions.create(
+                            model=self.text_model,
+                            messages=messages,
+                            temperature=0.1 if is_agent_mode else 0.3, # Colder temp for strict code
+                            max_tokens=2048,
+                            timeout=7
+                        )
+                        reply = completion.choices[0].message.content.strip()
 
-            except Exception as e:
-                # 2. ENGAGE EDGE FALLBACK
-                print(f"\n[Brain Warning]: Cloud Uplink Failed or Timed Out! ({e})")
-                print("[Brain]: Rerouting to Local Edge Engine (Ollama)...")
-                return self._think_local(context, cleaned_text)
-        else:
-            # If Groq client never initialized, go straight to Local LLM
-            print("[Brain]: No Cloud Client active. Rerouting to Local Edge Engine (Ollama)...")
-            return self._think_local(context, cleaned_text)
+                    if reply:
+                        if not is_agent_mode:
+                            self._save_memory(cleaned_text, reply)
+                        return reply
+
+                except Exception as e:
+                    print(f"[Brain Warning]: Cloud Uplink Failed! ({e})")
+            
+            time.sleep(1)
+
+        return self._fallback_think(cleaned_text)
 
     def think_with_vision(self, user_text: str, image_path: str) -> str:
-        """Vision requires the cloud model (Groq Qwen). Cannot easily fallback to offline without large local vision models."""
         if not self.client:
             return "Sir, cloud API client is required for vision processing."
         try:
@@ -214,7 +193,7 @@ class HermesBrain:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": f"You are HERMES, an advanced AI operating system assistant addressing the user as 'Sir'. Analyze this image and answer: {user_text}"},
+                        {"type": "text", "text": f"You are HERMES, an advanced AI operating system assistant addressing the user as 'Sir'. Analyze this image and answer directly without explaining your reasoning process: {user_text}"},
                         {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded_image}"}}
                     ]
                 }
@@ -227,7 +206,12 @@ class HermesBrain:
                 max_tokens=1024,
                 timeout=15
             )
-            return completion.choices[0].message.content.strip()
+            reply = completion.choices[0].message.content.strip()
+            
+            # ⚡ BUG 2 FIX: Strip reasoning blocks (<think>...</think>) from output
+            reply = re.sub(r'<think>.*?</think>', '', reply, flags=re.DOTALL).strip()
+            
+            return reply
         except Exception as e:
             print(f"[Groq Vision Error]: {e}")
             return f"Sir, visual analysis failed: {e}"
