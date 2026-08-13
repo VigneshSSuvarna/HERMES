@@ -18,7 +18,7 @@ class HermesEars:
         self.recognizer = sr.Recognizer()
         
         # Micro-calibrated sensitivity for continuous ambient speech
-        self.recognizer.energy_threshold = 300
+        self.recognizer.energy_threshold = 1000
         self.recognizer.dynamic_energy_threshold = True
         self.recognizer.pause_threshold = 0.8
 

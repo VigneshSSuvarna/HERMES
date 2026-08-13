@@ -1,30 +1,27 @@
-import requests
-import json
 import os
+import pandas as pd
 
-def get_ethereum_price():
-    try:
-        response = requests.get('https://min-api.cryptocompare.com/data/price?fsym=ETH&tsyms=USD')
-        data = response.json()
-        return data.get('USD')  # Use get() to avoid KeyError
-    except requests.exceptions.RequestException as e:
-        print(f"Error: {e}")
-        return None
+def create_budget_file():
+    # Create a dictionary with dummy data
+    data = {
+        'Item': ['Item1', 'Item2', 'Item3', 'Item4', 'Item5'],
+        'Cost': [10.99, 5.99, 7.99, 3.99, 9.99],
+        'Category': ['Food', 'Entertainment', 'Clothing', 'Electronics', 'Home']
+    }
 
-def save_price_to_file(price):
-    desktop = os.path.join(os.path.join(os.path.expanduser('~')), 'Desktop')
-    filename = 'ethereum_price.txt'
-    filepath = os.path.join(desktop, filename)
-    with open(filepath, 'w') as f:
-        f.write(str(price))
-    print(f"Price saved to {filepath}")
+    # Create a DataFrame
+    df = pd.DataFrame(data)
 
-def main():
-    price = get_ethereum_price()
-    if price is not None:
-        save_price_to_file(price)
-    else:
-        print("Failed to retrieve Ethereum price")
+    # Get the path to the desktop
+    desktop_path = os.path.join(os.path.join(os.path.expanduser('~')), 'Desktop')
+
+    # Create the file path
+    file_path = os.path.join(desktop_path, 'Budget.xlsx')
+
+    # Write the DataFrame to an Excel file
+    df.to_excel(file_path, index=False)
+
+    print("Budget file created successfully.")
 
 if __name__ == "__main__":
-    main()
+    create_budget_file()

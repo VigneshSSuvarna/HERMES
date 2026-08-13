@@ -1,6 +1,7 @@
 import os
 import datetime
 import chromadb
+import uuid
 
 class HermesLongTermMemory:
     def __init__(self, db_path="data/chroma_db"):
@@ -28,7 +29,8 @@ class HermesLongTermMemory:
             return
 
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        doc_id = f"mem_{timestamp.replace(' ', '_').replace(':', '')}"
+        # Added a short UUID to prevent ID collisions if multiple memories save in the exact same second
+        doc_id = f"mem_{timestamp.replace(' ', '_').replace(':', '')}_{str(uuid.uuid4())[:8]}"
 
         try:
             self.collection.add(
@@ -36,7 +38,7 @@ class HermesLongTermMemory:
                 metadatas=[{"source": source, "timestamp": timestamp}],
                 ids=[doc_id]
             )
-            print(f"[Memory]: Encoded and stored new long-term memory: '{text[:30]}...'")
+            # Suppressed the print statement here so the Brain's 'Passive Learning Triggered' log stays clean
         except Exception as e:
             print(f"[Memory Error]: Failed to store data - {e}")
 
@@ -49,9 +51,16 @@ class HermesLongTermMemory:
             return ""
 
         try:
+            # CRITICAL BUG FIX: ChromaDB will crash if you ask for 3 results but only have 1 or 2 saved.
+            collection_size = self.collection.count()
+            if collection_size == 0:
+                return ""
+            
+            safe_n_results = min(n_results, collection_size)
+
             results = self.collection.query(
                 query_texts=[query],
-                n_results=n_results
+                n_results=safe_n_results
             )
             
             if not results['documents'] or not results['documents'][0]:

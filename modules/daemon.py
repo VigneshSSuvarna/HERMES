@@ -1,5 +1,6 @@
-import threading
 import time
+import threading
+import datetime
 import psutil
 
 class HermesDaemon:
@@ -12,7 +13,8 @@ class HermesDaemon:
         self.cooldowns = {
             "cpu_warning": 0,
             "battery_warning": 0,
-            "disk_warning": 0
+            "disk_warning": 0,
+            "late_night_alert": False
         }
         
     def start(self):
@@ -25,6 +27,7 @@ class HermesDaemon:
         print("[Daemon]: Proactive threaded monitoring active. HERMES is watching.")
 
     def stop(self):
+        """Terminates the daemon."""
         self.is_running = False
 
     def _alert(self, message):
@@ -38,24 +41,39 @@ class HermesDaemon:
 
     def _monitor_loop(self):
         """The infinite background loop that watches system vitals safely."""
+        # Give the system 10 seconds to fully boot before starting checks
+        time.sleep(10)
+        
         while self.is_running:
             try:
                 current_time = time.time()
                 
-                # 1. 🌡️ Monitor CPU Usage (Alert if stuck above 90%)
+                # 1. 🕛 LATE NIGHT PROTOCOL
+                now = datetime.datetime.now()
+                # Trigger exactly at 2:00 AM
+                if now.hour == 2 and now.minute == 0:
+                    if not self.cooldowns["late_night_alert"]:
+                        self._alert("Sir, it is exactly 2:00 AM. Would you like me to lock the workstation and initiate shutdown protocols?")
+                        self.cooldowns["late_night_alert"] = True
+                else:
+                    # Reset the late night trigger when it's no longer 2 AM
+                    self.cooldowns["late_night_alert"] = False
+
+
+                # 2. 🌡️ Monitor CPU Usage (Alert if stuck above 85%)
                 cpu_usage = psutil.cpu_percent(interval=1)
-                if cpu_usage > 90.0:
+                if cpu_usage > 85.0:
                     if current_time - self.cooldowns["cpu_warning"] > 300: # Every 5 minutes
                         self._alert(f"Sir, pardon the interruption. System CPU usage has spiked to {int(cpu_usage)} percent. You may want to check for runaway processes.")
                         self.cooldowns["cpu_warning"] = current_time
 
-                # 2. 🔋 Monitor Battery Life (If on a laptop)
+                # 3. 🔋 Monitor Battery Life (If on a laptop)
                 if hasattr(psutil, 'sensors_battery'):
                     battery = psutil.sensors_battery()
                     if battery:
                         if battery.percent < 20 and not battery.power_plugged:
                             if current_time - self.cooldowns["battery_warning"] > 600: # Every 10 mins
-                                self._alert(f"Sir, battery reserves are dropping. We are currently at {battery.percent} percent. Please connect to a power source.")
+                                self._alert(f"Sir, battery reserves are dropping. We are currently at {int(battery.percent)} percent. Please connect to a power source.")
                                 self.cooldowns["battery_warning"] = current_time
                         
                         elif battery.percent == 100 and battery.power_plugged:
@@ -63,7 +81,7 @@ class HermesDaemon:
                                 self._alert("Sir, the battery has reached maximum capacity. You may disconnect the power.")
                                 self.cooldowns["battery_warning"] = current_time
 
-                # 3. 💾 Monitor Primary Disk Space (Alert if below 10GB)
+                # 4. 💾 Monitor Primary Disk Space (Alert if below 10GB)
                 disk_usage = psutil.disk_usage('/')
                 free_space_gb = disk_usage.free / (1024 ** 3)
                 if free_space_gb < 10.0:
@@ -73,7 +91,7 @@ class HermesDaemon:
 
             except Exception as e:
                 # Ensures background thread never crashes due to a minor monitoring glitch
-                pass
+                print(f"[Daemon Error]: Background telemetry fault: {e}")
 
             # Sleep for 10 seconds before checking again (Ultra-low CPU overhead)
             time.sleep(10)

@@ -6,6 +6,7 @@ import threading
 import queue
 import re
 import ctypes
+import asyncio # ⚡ FOR ORCHESTRATOR ASYNC SUPPORT
 
 # -------------------------------------------------------------
 # 🛡️ SYSTEM RESOURCE LIMITERS (PREVENTS LAG & FREEZING)
@@ -26,14 +27,15 @@ from modules.voice import HermesVoice
 from modules.automation import HermesHands
 from modules.eyes import HermesEyes
 from modules.internet import HermesInternet
-from modules.agent import HermesAgent  # ⚡ UNIVERSAL AGENT IMPORTED
+from modules.agent import HermesAgent
+from core.orchestrator import HermesOrchestrator # 🛡️ AEGIS ORCHESTRATOR IMPORTED
 
 # -------------------------------------------------------------
 # 🚀 THE COMMAND QUEUE (PREVENTS UI FREEZING & COM ERRORS)
 # -------------------------------------------------------------
 command_queue = queue.Queue()
 
-def command_worker(app, brain, hands, voice, eyes, internet, agent):
+def command_worker(app, brain, hands, voice, eyes, internet, agent, orchestrator):
     """Dedicated background worker that executes commands safely."""
     try:
         import pythoncom
@@ -42,10 +44,10 @@ def command_worker(app, brain, hands, voice, eyes, internet, agent):
         print(f"[COM Warning]: Could not initialize Windows COM bridge: {e}")
 
     while True:
-        cmd = command_queue.get() # Waits patiently for the next command
+        cmd = command_queue.get() 
         if cmd:
             try:
-                process_command(cmd, app, brain, hands, voice, eyes, internet, agent)
+                process_command(cmd, app, brain, hands, voice, eyes, internet, agent, orchestrator)
             except Exception as e:
                 app.log(f"[Execution Warning]: {e}")
         command_queue.task_done()
@@ -78,7 +80,6 @@ def execute_with_self_healing(brain: HermesBrain, app: HermesDashboard, hands: H
 
             app.log("[Watchdog]: Error caught. Engaging Self-Healing Protocol...")
             
-            # Direct LLM call bypassing planner triggers
             correction = ""
             try:
                 if brain.client:
@@ -94,12 +95,11 @@ def execute_with_self_healing(brain: HermesBrain, app: HermesDashboard, hands: H
                     )
                     correction = completion.choices[0].message.content.strip()
                 else:
-                    correction = current_target.rstrip('e') # Fallback typo trimmer
+                    correction = current_target.rstrip('e') 
             except Exception as llm_err:
                 print(f"[Watchdog AI Error]: {llm_err}")
                 correction = current_target
 
-            # Aggressive Regex Sanitization to isolate pure app/process names
             words = re.findall(r'[a-zA-Z0-9_\-\.]+', correction)
             if words:
                 stopwords = ["success", "output", "chrome", "process", "target", "action", "error", "failed", "not", "found", "process", "named"]
@@ -115,7 +115,7 @@ def execute_with_self_healing(brain: HermesBrain, app: HermesDashboard, hands: H
 # -------------------------------------------------------------
 # 🧠 MAIN COMMAND PROCESSOR
 # -------------------------------------------------------------
-def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: HermesHands, voice: HermesVoice, eyes: HermesEyes, internet: HermesInternet, agent: HermesAgent):
+def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: HermesHands, voice: HermesVoice, eyes: HermesEyes, internet: HermesInternet, agent: HermesAgent, orchestrator: HermesOrchestrator):
     cmd_clean = cmd.strip('"\' ')
     if not cmd_clean:
         return
@@ -137,12 +137,53 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
     cmd_lower = cmd_clean.lower()
     
     # -------------------------------------------------------------
+    # 🧠 UNIVERSAL AGENTIC RE-ACT ROUTER (CHECKED FIRST FOR COMPLEX TASKS)
+    # -------------------------------------------------------------
+    complex_triggers = [
+        "organize", "scrape", "write a script", "find and move", 
+        "batch rename", "extract text from", "generate a report", 
+        "summarize files", "generate an excel", "create an excel", "spreadsheet"
+    ]
+    
+    if any(trigger in cmd_lower for trigger in complex_triggers):
+        app.log("[Agent]: Routing request to Universal Autonomous Execution Agent...")
+        voice.speak("Synthesizing autonomous execution plan, Sir.")
+        response = agent.execute_task(cmd_clean)
+        app.log(f"[HERMES Agent Output]: {response}")
+        voice.speak("Autonomous task completed, Sir.")
+        app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+        return
+
+    # -------------------------------------------------------------
+    # 🛡️ PHASE 2: UNIFIED ORCHESTRATOR ROUTER
+    # Routes Web, Office, GUI, and Restricted commands to Aegis Core
+    # -------------------------------------------------------------
+    orchestrator_triggers = [
+        "terminal", "powershell", "delete file", "command prompt", "cmd", # Safety Triggers
+        "search the web", "weather in", "scrape", "live web",             # Web Triggers
+        "excel", "spreadsheet", "budget",                                 # Office Triggers
+        "notepad", "type into", "type in"                                 # GUI Triggers
+    ]
+    
+    # Catch any orchestrator keywords OR explicit website extensions
+    if any(trigger in cmd_lower for trigger in orchestrator_triggers) or ".com" in cmd_lower or ".org" in cmd_lower:
+        app.log("[Orchestrator]: Advanced/Restricted action detected. Engaging Aegis Core...")
+        
+        # Executes the async Orchestrator safely inside this background thread!
+        asyncio.run(orchestrator.execute_goal(cmd_clean))
+        
+        app.log("[HERMES]: Orchestrator sequence complete.")
+        app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
+        return
+
+    # -------------------------------------------------------------
     # ⚡ FAST-TRACK LOCAL OVERRIDES (Zero-Latency OS Controls)
     # -------------------------------------------------------------
     
     # 1. Fast-Track: Opening Apps
     if cmd_lower.startswith("open ") or cmd_lower.startswith("launch "):
         target = cmd_lower.replace("open ", "").replace("launch ", "").strip()
+        
         if "and search" in target or "search for" in target or " and " in target:
             pass  
         else:
@@ -155,7 +196,6 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
     
     # Fast-Track: Dynamic Volume Control
     if "volume" in cmd_lower:
-        import re
         numbers = re.findall(r'\d+', cmd_lower)
         if numbers:
             target_vol = numbers[0]
@@ -176,10 +216,9 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
         app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
         return
     
-    # 2. Fast-Track: Closing Apps & Windows (With Filler Phrase Stripping)
+    # 2. Fast-Track: Closing Apps & Windows
     if cmd_lower.startswith("close ") or cmd_lower.startswith("kill "):
         target = cmd_lower.replace("close ", "").replace("kill ", "").replace(" the ", "").strip()
-        
         for wrapper in ["a process named ", "process named ", "named ", "app named ", "program named "]:
             if target.startswith(wrapper):
                 target = target[len(wrapper):].strip()
@@ -233,11 +272,9 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
     
     if any(k in cmd_lower_vision for k in vision_triggers):
         app.log("[Eyes]: Capturing screen for neural vision analysis...")
-        print("\n--- TRACE: VISION SCREEN CAPTURE TRIGGERED ---")
         screen_file = eyes.capture_screen()
         
         if screen_file and os.path.exists(screen_file):
-            print(f"[TRACE]: Screenshot captured to '{screen_file}'. Handing to Brain...")
             response = brain.think_with_vision("Analyze what is currently visible on my screen and summarize it for me.", screen_file)
             eyes.cleanup()
         else:
@@ -249,7 +286,6 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
         app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
         return
 
-    # Local Image File Reader
     if cmd_lower_vision.startswith("read ") or cmd_lower_vision.startswith("analyze image ") or cmd_lower_vision.startswith("look at image "):
         target_name = cmd_lower_vision.replace("read ", "").replace("analyze image ", "").replace("look at image ", "").strip()
         app.log(f"[Eyes]: Searching local storage for image matching '{target_name}'...")
@@ -268,7 +304,6 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
                     break
                 
         if image_file and os.path.exists(image_file):
-            app.log(f"[TRACE]: Found image file '{image_file}'. Handing to Vision AI...")
             response = brain.think_with_vision(f"Read and extract all text or describe what is visible in this image file: {target_name}", image_file)
         else:
             response = f"Sir, I could not find an image file matching '{target_name}' in the working directory."
@@ -276,25 +311,6 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
         app.log(f"[HERMES]: {response}")
         app.set_voice_state("SPEAKING", "TRANSMITTING NEURAL SPEECH...")
         voice.speak(response)
-        app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
-        return
-
-    # -------------------------------------------------------------
-    # 🧠 UNIVERSAL AGENTIC RE-ACT ROUTER (FOR UNRESTRICTED TASKS)
-    # -------------------------------------------------------------
-    complex_triggers = [
-        "organize", "scrape", "write a script", "find and move", 
-        "batch rename", "extract text from", "generate a report", "summarize files"
-    ]
-    
-    if any(trigger in cmd_lower for trigger in complex_triggers):
-        app.log("[Agent]: Routing request to Universal Autonomous Execution Agent...")
-        voice.speak("Synthesizing autonomous execution plan, Sir.")
-        
-        response = agent.execute_task(cmd_clean)
-        
-        app.log(f"[HERMES Agent Output]: {response}")
-        voice.speak("Autonomous task completed, Sir.")
         app.set_voice_state("LISTENING", "DIRECT LISTENING ACTIVE...")
         return
 
@@ -310,7 +326,6 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
             action_types_executed = []
             for line in response.split("\n"):
                 if "COMMAND:" in line:
-                    print(f"[TRACE]: Parsing line -> {line.strip()}")
                     parts = line.split("COMMAND:")[1].split("|")
                     action_type = parts[0].strip()
                     target_val = ""
@@ -319,7 +334,6 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
 
                     action_types_executed.append(action_type)
                     app.log(f"[Dispatch]: Action='{action_type}', Target='{target_val}'")
-                    print(f"[TRACE]: Successfully Dispatched -> Action: '{action_type}', Target: '{target_val}'")
                     
                     if action_type == "fetch_weather":
                         exec_result = internet.fetch_weather(target_val)
@@ -330,12 +344,14 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
                         app.log(f"[Internet]: {exec_result}")
                         clean_reply = exec_result
                     else:
-                        print(f"[TRACE]: Handing off to automation.py with Watchdog...")
-                        exec_result = execute_with_self_healing(brain, app, hands, action_type, target_val)
-                        print(f"[TRACE]: Hands returned -> {exec_result}")
-                        app.log(f"[Hands Output]: {exec_result}")
+                        # 🛡️ PHASE 2 ROUTING PATCH: Catch commands that slipped past the keyword triggers
+                        if action_type in orchestrator.action_routing:
+                            exec_result = orchestrator.action_routing[action_type].execute(action_type, target_val)
+                            app.log(f"[Connector Output]: {exec_result}")
+                        else:
+                            exec_result = execute_with_self_healing(brain, app, hands, action_type, target_val)
+                            app.log(f"[Hands Output]: {exec_result}")
 
-            # CONCISE SPEECH FILTER
             if not any(k in response for k in ["fetch_weather", "fetch_info"]):
                 if "open_website" in action_types_executed:
                     clean_reply = "Opening page, Sir."
@@ -351,7 +367,6 @@ def process_command(cmd: str, app: HermesDashboard, brain: HermesBrain, hands: H
                         clean_reply = "Done, Sir."
 
         except Exception as e:
-            print(f"[TRACE ERROR]: Command parsing failed: {e}")
             app.log(f"[Main Error]: Command parsing failed: {e}")
 
     app.log(f"[HERMES]: {clean_reply}")
@@ -380,11 +395,7 @@ def background_voice_loop(app, ears, brain, hands, voice, eyes, internet):
             if voice_cmd and len(voice_cmd.strip().split()) >= 1:
                 clean_cmd = voice_cmd.strip().lower()
                 
-                echo_phrases = [
-                    "acknowledged", "processing command", "sir", "neural speech", 
-                    "acknowledged sir", "hermes", "at your service", 
-                    "synthesizing autonomous", "execution plan", "autonomous task completed"
-                ]
+                echo_phrases = ["acknowledged", "processing command", "sir", "neural speech", "acknowledged sir", "hermes", "at your service", "synthesizing autonomous", "execution plan", "autonomous task completed"]
                 if any(phrase in clean_cmd for phrase in echo_phrases) and len(clean_cmd.split()) <= 8:
                     time.sleep(0.1)
                     continue
@@ -408,22 +419,24 @@ def main():
     hands = HermesHands()
     eyes = HermesEyes()
     internet = HermesInternet()
-    agent = HermesAgent(brain) # ⚡ Initialize the Universal Agent
+    agent = HermesAgent(brain) 
+    
+    # 🛡️ ⚡ INITIALIZE AEGIS ORCHESTRATOR
+    orchestrator = HermesOrchestrator(brain) 
 
     def handle_gui_command(cmd_text):
         command_queue.put(cmd_text)
 
     gui = HermesDashboard(command_callback=handle_gui_command)
 
-    # Start the single, hyper-stable worker thread
+    # ⚡ PASS ORCHESTRATOR INTO THE WORKER THREAD
     worker_thread = threading.Thread(
         target=command_worker,
-        args=(gui, brain, hands, voice, eyes, internet, agent), # ⚡ Pass Agent to worker
+        args=(gui, brain, hands, voice, eyes, internet, agent, orchestrator),
         daemon=True
     )
     worker_thread.start()
 
-    # Start voice loop
     voice_thread = threading.Thread(
         target=background_voice_loop,
         args=(gui, ears, brain, hands, voice, eyes, internet),

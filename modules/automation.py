@@ -39,10 +39,7 @@ class WindowsUniversalLauncher:
         print(f"[Launcher]: Cached {len(self.app_cache)} application shortcuts from system directories.")
         
     def click_text_on_screen(self, description: str) -> str:
-        """
-        Visually finds an element on the screen based on a natural language description 
-        and clicks it using AI vision coordinates.
-        """
+        """Visually finds an element on the screen using AI vision coordinates and clicks it."""
         print(f"[Hands Vision]: Scanning screen for '{description}'...")
         
         screenshot_path = "temp_screen_scan.png"
@@ -63,7 +60,6 @@ class WindowsUniversalLauncher:
                 os.remove(screenshot_path)
                 
             if "NOT_FOUND" in response or "," not in response:
-                # ⚡ Updated for Self-Healing
                 return f"Error: Could not visually locate '{description}' on the screen. Target not found."
                 
             coords_str = response.strip().split()[0]
@@ -78,7 +74,6 @@ class WindowsUniversalLauncher:
         except Exception as e:
             if os.path.exists(screenshot_path):
                 os.remove(screenshot_path)
-            # ⚡ Updated for Self-Healing
             return f"Error: Visual click failed: {e}"
 
     def launch(self, app_name: str) -> bool:
@@ -94,8 +89,8 @@ class WindowsUniversalLauncher:
             "notepad": "notepad",
             "whatsapp": "whatsapp:",
             "spotify": "spotify:",
-            "calculator": "calculator:",
-            "calc": "calculator:",
+            "calculator": "calc.exe",
+            "calc": "calc.exe",
             "soundrecorder": "Sound Recorder:",
             "voice recorder": "Sound Recorder:",
             "netflix": "netflix:",
@@ -105,29 +100,17 @@ class WindowsUniversalLauncher:
         lookup_target = aliases.get(target, target)
         print(f"[Launcher]: Executing nuclear bypass for '{lookup_target}'...")
 
-        # LAYER 1: Native Shell / URI Protocol Injection with Non-Blocking Focus
+        # LAYER 1: Native Shell / URI Protocol Injection
         try:
             print(f"[Layer 1] Injecting '{lookup_target}' into Windows Core...")
-            if ":" in lookup_target:
+            if lookup_target == "calc.exe":
+                subprocess.Popen("calc.exe")
+            elif ":" in lookup_target:
                 subprocess.Popen(f'explorer.exe {lookup_target}', shell=True)
             else:
                 subprocess.Popen(f'start {lookup_target}', shell=True)
                 
             time.sleep(1.0)
-
-            # --- NON-BLOCKING LIGHTWEIGHT FOCUS CHECK ---
-            try:
-                search_term = target.replace(":", "").replace("app", "").strip()
-                active = gw.getActiveWindow()
-                if not active or search_term not in active.title.lower():
-                    for win in gw.getWindowsWithTitle(search_term):
-                        if win.isMinimized:
-                            win.restore()
-                        win.activate()
-                        break
-            except Exception:
-                pass
-
             return True
         except Exception as e:
             print(f"[Layer 1] Core Injection Failed: {e}")
@@ -162,7 +145,6 @@ class HermesHands:
         """Automates WhatsApp to search for a contact and open their chat."""
         try:
             print(f"[Hands]: Opening WhatsApp and searching for contact: '{contact_name}'...")
-            
             whatsapp_windows = [w for w in gw.getWindowsWithTitle('WhatsApp') if w.title]
             
             if whatsapp_windows:
@@ -181,10 +163,47 @@ class HermesHands:
             time.sleep(0.8)
             pyautogui.press('enter')
             return f"Successfully opened WhatsApp chat for '{contact_name}', Sir."
-
         except Exception as e:
-            # ⚡ Updated for Self-Healing
             return f"Error: Failed to automate WhatsApp chat: {e}"
+
+    def write_excel_cell(self, target: str) -> str:
+        """Phase 2 COM Connector: Writes text into an Excel file cell (filepath|cell|value)."""
+        try:
+            import win32com.client
+            parts = target.split("|")
+            if len(parts) < 3: 
+                return "Error: Target must be formatted as 'filepath|cell|value'"
+            
+            filepath = os.path.abspath(parts[0].strip())
+            cell = parts[1].strip()
+            value = parts[2].strip()
+
+            excel = win32com.client.Dispatch("Excel.Application")
+            excel.Visible = True 
+            
+            if not os.path.exists(filepath):
+                wb = excel.Workbooks.Add()
+                wb.SaveAs(filepath)
+            else:
+                wb = excel.Workbooks.Open(filepath)
+                
+            sheet = wb.ActiveSheet
+            sheet.Range(cell).Value = value
+            wb.Save()
+            
+            return f"Successfully wrote '{value}' to cell {cell} in {os.path.basename(filepath)}."
+        except Exception as e:
+            return f"Office Automation Error: {e}"
+
+    def type_notepad_content(self, target: str) -> str:
+        """Phase 2 GUI Connector: Opens Notepad and types text."""
+        try:
+            subprocess.Popen(["notepad.exe"])
+            time.sleep(2) 
+            pyautogui.write(target, interval=0.02)
+            return f"Successfully opened Notepad and typed: {target}"
+        except Exception as e:
+            return f"GUI Automation Error: {str(e)}"
 
     def get_ambient_history(self) -> str:
         """Non-blocking reader for recent ambient activity."""
@@ -199,36 +218,28 @@ class HermesHands:
         except Exception as e:
             return f"Error: Could not read ambient history: {e}"
 
-    def get_schedule_events(self) -> str:
-        """Fetches upcoming Google Calendar events."""
-        try:
-            from modules.calendar_sync import HermesCalendar
-            cal = HermesCalendar()
-            return cal.get_upcoming_events()
-        except ImportError:
-            return "Sir, the calendar_sync module is missing."
-        except Exception as e:
-            return f"Error: Failed to retrieve Google Calendar events: {e}"
-
     def execute_action(self, action_type: str, target: str = "") -> str:
         action = action_type.strip().lower()
         target_val = target.strip()
         print(f"[Hands Dispatch]: Action='{action}', Target='{target_val}'")
 
         try:
-            if action == "open_app":
+            # 🛡️ Native Context Routing
+            if action in ["get_context", "ambient", "context"]:
+                return self.get_ambient_history()
+
+            elif action == "open_app":
                 success = self.launcher.launch(target_val)
-                # ⚡ Updated for Self-Healing (Includes "Failed" and "not found")
                 return f"Successfully launched application: {target_val}" if success else f"Failed to launch '{target_val}'. App not found."
+
+            elif action == "write_excel":
+                return self.write_excel_cell(target_val)
+
+            elif action == "type_notepad":
+                return self.type_notepad_content(target_val)
 
             elif action == "open_whatsapp":
                 return self.open_whatsapp_chat(target_val)
-
-            elif action == "get_context":
-                return self.get_ambient_history()
-
-            elif action == "get_schedule":
-                return self.get_schedule_events()
 
             elif action == "vision_click":
                 return self.launcher.click_text_on_screen(target_val)
@@ -241,7 +252,6 @@ class HermesHands:
                     elif action == "restore_window": win.restore()
                     elif action == "close_active_window": win.close()
                     return f"Executed {action} on {win.title}"
-                # ⚡ Updated for Self-Healing
                 return f"Failed: Could not find window matching '{target_val}'"
 
             elif action == "focus_window":
@@ -251,13 +261,19 @@ class HermesHands:
                     if win.isMinimized: win.restore()
                     win.activate()
                     return f"Focused active window: {win.title}"
-                # ⚡ Updated for Self-Healing
                 return f"Failed: Window not found for '{target_val}'"
 
             elif action == "kill_process":
                 target_proc = target_val.lower().replace(".exe", "").strip()
+                
+                # ⚡ Special handler for Windows UWP Calculator package
+                if "calc" in target_proc or "calculator" in target_proc:
+                    result1 = subprocess.run("taskkill /F /IM ApplicationFrameHost.exe /T", shell=True, capture_output=True, text=True)
+                    result2 = subprocess.run("taskkill /F /IM CalculatorApp.exe /T", shell=True, capture_output=True, text=True)
+                    if result1.returncode == 0 or result2.returncode == 0:
+                        return f"Successfully terminated {target_val}."
+                
                 result = subprocess.run(f"taskkill /F /IM {target_proc}.exe /T", shell=True, capture_output=True, text=True)
-                # ⚡ Updated for Self-Healing
                 return f"Successfully terminated {target_val}." if result.returncode == 0 else f"Failed: Process '{target_val}' not found."
 
             elif action == "run_terminal":
@@ -325,11 +341,9 @@ class HermesHands:
                 return f"System volume set to {vol_level}%."
 
             else:
-                # ⚡ Updated for Self-Healing
                 return f"Error: Unknown system action: {action_type}"
                 
         except Exception as e:
-            # ⚡ Updated for Self-Healing
             err_msg = f"Error during execution: {e}"
             print(err_msg)
             return err_msg
